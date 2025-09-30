@@ -20,9 +20,9 @@
 ```
                     Telegram 用戶
                          │
-                    @rental 訊息
-                    @api 訊息
-                    @all 訊息
+                    #rental 訊息
+                    #api 訊息
+                    #all 訊息
                          │
                          ▼
                  ┌───────────────┐
@@ -110,9 +110,9 @@ python3 telegram_bot_multi.py
 在 Telegram 中發送訊息：
 
 ```
-@rental 查詢當前路徑          → 發送給 rental 會話
-@api 執行測試                → 發送給 api 會話
-@all 生成文檔                → 發送給所有會話
+#rental 查詢當前路徑          → 發送給 rental 會話
+#api 執行測試                → 發送給 api 會話
+#all 生成文檔                → 發送給所有會話
 直接發送訊息                  → 發送給預設會話（第一個）
 ```
 
@@ -133,8 +133,8 @@ python3 telegram_bot_multi.py
 - `/start` - 顯示幫助和會話列表
 - `/status` - 查看所有會話狀態
 - `/sessions` - 查看會話列表
-- `/buffer @rental` - 獲取指定會話的緩衝區內容
-- `/clear @rental` - 清空指定會話的緩衝區
+- `/buffer #rental` - 獲取指定會話的緩衝區內容
+- `/clear #rental` - 清空指定會話的緩衝區
 
 ### 互動式按鈕
 

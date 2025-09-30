@@ -32,7 +32,7 @@ class SessionManager:
         添加一個會話
 
         Args:
-            name: 會話名稱（用於 @name 路由）
+            name: 會話名稱（用於 #name 路由）
             path: 工作目錄
             tmux_session: tmux 會話名稱（如果不提供，使用 name）
         """

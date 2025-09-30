@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Message Router - 訊息路由器
-解析 @project 語法並路由到對應的會話
+解析 #project 語法並路由到對應的會話
 """
 
 import re
@@ -94,10 +94,10 @@ if __name__ == '__main__':
 
     # 測試解析
     tests = [
-        "@rental 查詢路徑",
-        "@all 執行測試",
+        "#rental 查詢路徑",
+        "#all 執行測試",
         "普通訊息",
-        "@notexist 測試"
+        "#notexist 測試"
     ]
 
     for test in tests:
