@@ -99,7 +99,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = ["📊 會話狀態\n"]
     for name, info in status_info.items():
         status_emoji = "✅" if info['exists'] else "❌"
-        lines.append(f"{status_emoji} @{name}")
+        lines.append(f"{status_emoji} #{name}")
         lines.append(f"   路徑: {info['path']}")
         lines.append(f"   tmux: {info['tmux_session']}")
         lines.append(f"   狀態: {'運行中' if info['exists'] else '未啟動'}\n")
