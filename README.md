@@ -167,7 +167,7 @@ Ctrl+B, 然後按 D
 
 ```yaml
 sessions:
-  - name: 會話名稱          # 用於 @name 路由
+  - name: 會話名稱          # 用於 #name 路由
     path: 專案路徑          # Claude Code 工作目錄
     tmux: tmux_會話名稱     # tmux 會話名稱（可選，預設 claude-{name}）
 ```
@@ -176,10 +176,16 @@ sessions:
 
 ```yaml
 sessions:
-  - name: 會話名稱（用於 @name 路由）
-    path: 工作目錄路徑
-    tmux: tmux 會話名稱（可選，預設為 claude-{name}）
+  - name: rental
+    path: /Users/danlio/project/rental-management
+    tmux: claude-rental
 
+  - name: api
+    path: /Users/danlio/project/api-server
+    tmux: claude-api
+
+  - name: docs
+    path: /Users/danlio/project/documentation
     # tmux 會話名稱會自動設為 claude-docs
 ```
 ### .env 配置

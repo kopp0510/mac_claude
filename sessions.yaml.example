@@ -1,0 +1,17 @@
+# Claude Code 會話配置範例
+# 複製此文件為 sessions.yaml 並修改路徑
+
+sessions:
+  # 範例會話 1
+  - name: project1
+    path: /Users/username/project/project1
+    tmux: claude-project1
+
+  # 範例會話 2
+  - name: project2
+    path: /Users/username/project/project2
+    # tmux 可選，預設為 claude-project2
+
+  # 範例會話 3 - 使用預設 tmux 名稱
+  - name: api
+    path: /Users/username/project/api-server
