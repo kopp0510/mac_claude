@@ -1,6 +1,0 @@
-# Claude Code 會話配置
-# 格式：
-# sessions:
-#   - name: 會話名稱（用於 @name 路由）
-#     path: 工作目錄路徑
-#     tmux: tmux 會話名稱（可選，預設為 claude-{name}）

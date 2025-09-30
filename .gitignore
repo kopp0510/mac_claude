@@ -11,6 +11,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
+venv/
+env/
 
 # 日誌
 *.log
