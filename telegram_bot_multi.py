@@ -205,13 +205,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ 未授權的用戶")
         return
 
-    # 解析回調數據: choice_{session}_{num}
+    # 解析回調數據: choice_{session}:{num}
     data = query.data
     if data.startswith('choice_'):
-        parts = data.split('_')
-        if len(parts) >= 3:
-            session_name = parts[1]
-            choice = parts[2]
+        # 移除 'choice_' 前綴後，用 ':' 分割 session_name 和 choice
+        payload = data[7:]  # 移除 'choice_'
+        parts = payload.rsplit(':', 1)  # 從右邊分割一次
+        if len(parts) == 2:
+            session_name = parts[0]
+            choice = parts[1]
 
             # 發送選擇到對應會話
             message_queue.put((session_name, choice))
@@ -268,10 +270,10 @@ async def send_messages_to_telegram(chat_id, session_name, messages, confirmatio
                         else:
                             button_text = f"{num}. {text[:20]}"
 
-                        # callback_data 包含會話名稱
+                        # callback_data 包含會話名稱，使用 : 作為分隔符避免與底線衝突
                         keyboard.append([InlineKeyboardButton(
                             button_text,
-                            callback_data=f"choice_{session_name}_{num}"
+                            callback_data=f"choice_{session_name}:{num}"
                         )])
 
                     reply_markup = InlineKeyboardMarkup(keyboard)
