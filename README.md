@@ -136,6 +136,7 @@ python3 telegram_bot_multi.py
 - `/buffer #rental` - 獲取指定會話的緩衝區內容
 - `/clear #rental` - 清空指定會話的緩衝區
 - `/restart #rental` - 重啟指定會話
+- `/reload` - 重新載入 sessions.yaml 配置（無需重啟 Bot）
 
 ### 互動式按鈕
 
@@ -325,10 +326,13 @@ tmux kill-session -t claude-api
 A: 多會話版本可以管理一個或多個會話，更靈活，推薦使用。
 
 **Q: 如何添加新專案？**
-A: 在 `sessions.yaml` 添加新配置，重啟 Bot 即可。
+A: 在 `sessions.yaml` 添加新配置，然後使用 `/reload` 命令熱重載配置，無需重啟 Bot。
 
 **Q: 會話出現問題如何重啟？**
 A: 使用 `/restart #session` 命令重啟指定會話，例如 `/restart #rental`。這會終止舊的 tmux 會話並創建新的會話。
+
+**Q: 修改配置後需要重啟 Bot 嗎？**
+A: 不需要！使用 `/reload` 命令即可熱重載 `sessions.yaml`，系統會自動添加新會話、移除舊會話，並保持現有會話運行。
 
 ## 授權
 

@@ -107,6 +107,51 @@ class MultiSessionMonitor:
             return monitor.detect_confirmation_prompt(output)
         return None
 
+    def add_monitor(self, session_name: str, session_manager, callback):
+        """
+        添加新會話的監控器
+
+        Args:
+            session_name: 會話名稱
+            session_manager: SessionManager 實例
+            callback: 回調函數
+        """
+        if session_name in self.monitors:
+            logger.warning(f"⚠️  監控器已存在: {session_name}")
+            return
+
+        bridge = session_manager.get_bridge(session_name)
+        if not bridge:
+            logger.error(f"❌ 找不到 bridge: {session_name}")
+            return
+
+        # 創建監控器
+        monitor = OutputMonitor(bridge, idle_timeout=self.idle_timeout)
+
+        # 包裝回調函數
+        def wrapped_callback(output):
+            if self.on_output_callback:
+                self.on_output_callback(session_name, output)
+
+        # 啟動監控
+        monitor.start_monitoring(callback=wrapped_callback)
+        self.monitors[session_name] = monitor
+
+        logger.info(f"👁️  新增監控: {session_name}")
+
+    def stop_monitor(self, session_name: str):
+        """
+        停止指定會話的監控
+
+        Args:
+            session_name: 會話名稱
+        """
+        monitor = self.monitors.get(session_name)
+        if monitor:
+            monitor.stop_monitoring()
+            del self.monitors[session_name]
+            logger.info(f"🛑 停止監控: {session_name}")
+
 
 if __name__ == '__main__':
     # 測試代碼

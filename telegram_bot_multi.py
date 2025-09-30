@@ -84,6 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /buffer #session - 獲取指定會話的緩衝區內容
 /clear #session - 清空指定會話的緩衝區
 /restart #session - 重啟指定會話
+/reload - 重新載入 sessions.yaml 配置
 """
 
     await update.message.reply_text(welcome_message)
@@ -190,6 +191,36 @@ async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ #{session_name} 已成功重啟")
     else:
         await update.message.reply_text(f"❌ #{session_name} 重啟失敗，請查看日誌")
+
+
+async def reload_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """重新載入配置文件"""
+    if not check_user_permission(update):
+        await update.message.reply_text("❌ 未授權的用戶")
+        return
+
+    await update.message.reply_text("🔄 正在重載配置...")
+
+    # 執行重載
+    success, message, changes = reload_sessions_config()
+
+    if success:
+        # 格式化變更詳情
+        details = []
+        if changes.get('added'):
+            details.append(f"➕ 新增: {', '.join(['#' + s for s in changes['added']])}")
+        if changes.get('removed'):
+            details.append(f"➖ 移除: {', '.join(['#' + s for s in changes['removed']])}")
+        if changes.get('kept'):
+            details.append(f"✅ 保留: {', '.join(['#' + s for s in changes['kept']])}")
+
+        full_message = message
+        if details:
+            full_message += "\n\n" + "\n".join(details)
+
+        await update.message.reply_text(full_message)
+    else:
+        await update.message.reply_text(f"❌ {message}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -413,6 +444,83 @@ def load_sessions_config():
     message_router = MessageRouter(session_manager)
 
 
+def reload_sessions_config():
+    """
+    熱重載會話配置
+
+    Returns:
+        tuple: (success: bool, message: str, changes: dict)
+    """
+    global session_manager, message_router, multi_monitor
+
+    try:
+        # 載入新配置
+        with open(SESSIONS_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            new_config = yaml.safe_load(f)
+
+        if not new_config or 'sessions' not in new_config:
+            return False, f"配置文件格式錯誤: {SESSIONS_CONFIG_FILE}", {}
+
+        # 獲取當前會話列表
+        old_sessions = set(session_manager.get_all_sessions())
+        new_sessions_config = {s['name']: s for s in new_config['sessions']}
+        new_sessions = set(new_sessions_config.keys())
+
+        # 計算變更
+        added = new_sessions - old_sessions
+        removed = old_sessions - new_sessions
+        kept = old_sessions & new_sessions
+
+        changes = {
+            'added': list(added),
+            'removed': list(removed),
+            'kept': list(kept)
+        }
+
+        logger.info(f"🔄 重載配置: 新增 {len(added)}, 移除 {len(removed)}, 保留 {len(kept)}")
+
+        # 停止被移除會話的監控
+        for name in removed:
+            logger.info(f"  停止會話: {name}")
+            multi_monitor.stop_monitor(name)
+            session_manager.kill_session(name)
+
+        # 創建新的 SessionManager（保留舊會話）
+        new_manager = SessionManager()
+
+        # 添加所有新配置的會話
+        for session in new_config['sessions']:
+            name = session['name']
+            path = session['path']
+            tmux = session.get('tmux')
+
+            new_manager.add_session(name, path, tmux)
+
+            # 如果是新增的會話，創建 tmux 會話
+            if name in added:
+                logger.info(f"  新增會話: {name}")
+                bridge = new_manager.get_bridge(name)
+                if not bridge.session_exists():
+                    bridge.create_session(work_dir=path)
+
+        # 更新全域變數
+        session_manager = new_manager
+        message_router = MessageRouter(session_manager)
+
+        # 為新增的會話設置監控
+        for name in added:
+            multi_monitor.add_monitor(name, session_manager, on_output_complete)
+
+        message = f"✅ 配置已重載\n新增: {len(added)}\n移除: {len(removed)}\n保留: {len(kept)}"
+        return True, message, changes
+
+    except FileNotFoundError:
+        return False, f"找不到配置文件: {SESSIONS_CONFIG_FILE}", {}
+    except Exception as e:
+        logger.error(f"❌ 重載配置失敗: {e}")
+        return False, f"重載失敗: {str(e)}", {}
+
+
 def setup_bridge():
     """設置橋接"""
     global multi_monitor
@@ -461,6 +569,7 @@ def main():
     telegram_app.add_handler(CommandHandler("buffer", get_buffer))
     telegram_app.add_handler(CommandHandler("clear", clear_buffer))
     telegram_app.add_handler(CommandHandler("restart", restart_session))
+    telegram_app.add_handler(CommandHandler("reload", reload_config))
 
     # 註冊按鈕回調處理器
     telegram_app.add_handler(CallbackQueryHandler(button_callback))
