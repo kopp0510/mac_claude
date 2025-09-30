@@ -27,7 +27,7 @@ class MessageRouter:
         範例:
             "#rental 查詢路徑" -> [('rental', '查詢路徑')]
             "#all 執行測試" -> [('rental', '執行測試'), ('api', '執行測試')]
-            "查詢路徑" -> [('rental', '查詢路徑')]  # 預設第一個
+            "查詢路徑" -> [('__error__', '請使用 #project 指定目標會話')]
         """
         # 檢測 #all
         if message.startswith('#all '):
@@ -48,12 +48,14 @@ class MessageRouter:
                 # 會話不存在，返回錯誤標記
                 return [('__error__', f'會話不存在: {session_name}')]
 
-        # 沒有指定會話，使用第一個（預設）
+        # 沒有指定會話，返回錯誤提示
         sessions = self.session_manager.get_all_sessions()
-        if sessions:
-            return [(sessions[0], message)]
+        if not sessions:
+            return [('__error__', '沒有可用的會話')]
 
-        return [('__error__', '沒有可用的會話')]
+        # 生成可用會話列表
+        session_list = '、'.join([f'#{name}' for name in sessions])
+        return [('__error__', f'❌ 請指定目標會話\n\n可用會話：{session_list}\n\n範例：#rental 你的訊息')]
 
     def format_session_list(self) -> str:
         """
@@ -77,7 +79,6 @@ class MessageRouter:
         lines.append("\n💡 使用方式：")
         lines.append("• #rental 你的訊息  → 發送給 rental 會話")
         lines.append("• #all 你的訊息     → 發送給所有會話")
-        lines.append("• 你的訊息          → 發送給預設會話（第一個）")
 
         return '\n'.join(lines)
 
