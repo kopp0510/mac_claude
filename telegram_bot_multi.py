@@ -83,6 +83,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /sessions - 查看會話列表
 /buffer #session - 獲取指定會話的緩衝區內容
 /clear #session - 清空指定會話的緩衝區
+/restart #session - 重啟指定會話
 """
 
     await update.message.reply_text(welcome_message)
@@ -159,6 +160,36 @@ async def clear_buffer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session_name = context.args[0].replace('#', '').replace('@', '')
     multi_monitor.clear_buffer(session_name)
     await update.message.reply_text(f"🗑️ #{session_name} 緩衝區已清空")
+
+
+async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """重啟指定會話"""
+    if not check_user_permission(update):
+        await update.message.reply_text("❌ 未授權的用戶")
+        return
+
+    if not context.args:
+        await update.message.reply_text("❌ 請指定會話名稱，例如: /restart #rental")
+        return
+
+    session_name = context.args[0].replace('#', '').replace('@', '')
+
+    # 檢查會話是否存在
+    if not session_manager.get_session(session_name):
+        await update.message.reply_text(f"❌ 會話不存在: #{session_name}")
+        return
+
+    await update.message.reply_text(f"🔄 正在重啟會話 #{session_name}...")
+
+    # 重啟會話
+    success = session_manager.restart_session(session_name)
+
+    if success:
+        # 清空緩衝區
+        multi_monitor.clear_buffer(session_name)
+        await update.message.reply_text(f"✅ #{session_name} 已成功重啟")
+    else:
+        await update.message.reply_text(f"❌ #{session_name} 重啟失敗，請查看日誌")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -429,6 +460,7 @@ def main():
     telegram_app.add_handler(CommandHandler("sessions", sessions_list))
     telegram_app.add_handler(CommandHandler("buffer", get_buffer))
     telegram_app.add_handler(CommandHandler("clear", clear_buffer))
+    telegram_app.add_handler(CommandHandler("restart", restart_session))
 
     # 註冊按鈕回調處理器
     telegram_app.add_handler(CallbackQueryHandler(button_callback))

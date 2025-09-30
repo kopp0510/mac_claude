@@ -146,6 +146,39 @@ class SessionManager:
         for name in self.sessions.keys():
             self.kill_session(name)
 
+    def restart_session(self, name: str) -> bool:
+        """
+        重啟指定會話
+
+        Args:
+            name: 會話名稱
+
+        Returns:
+            bool: 是否成功
+        """
+        config = self.sessions.get(name)
+        bridge = self.bridges.get(name)
+
+        if not config or not bridge:
+            logger.error(f"❌ 找不到會話: {name}")
+            return False
+
+        logger.info(f"🔄 重啟會話: {name}")
+
+        # 終止舊會話
+        if bridge.session_exists():
+            logger.info(f"  終止舊會話: {config.tmux_session}")
+            bridge.kill_session()
+
+        # 創建新會話
+        logger.info(f"  創建新會話: {config.tmux_session}")
+        if bridge.create_session(work_dir=config.path):
+            logger.info(f"✅ 會話重啟成功: {name}")
+            return True
+        else:
+            logger.error(f"❌ 會話重啟失敗: {name}")
+            return False
+
 
 if __name__ == '__main__':
     # 測試代碼
