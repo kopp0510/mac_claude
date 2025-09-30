@@ -176,19 +176,12 @@ sessions:
 
 ```yaml
 sessions:
-  - name: rental
-    path: /Users/danlio/project/rental-management
-    tmux: claude-rental
+  - name: 會話名稱（用於 @name 路由）
+    path: 工作目錄路徑
+    tmux: tmux 會話名稱（可選，預設為 claude-{name}）
 
-  - name: api
-    path: /Users/danlio/project/api-server
-    tmux: claude-api
-
-  - name: docs
-    path: /Users/danlio/project/documentation
     # tmux 會話名稱會自動設為 claude-docs
 ```
-
 ### .env 配置
 
 ```env
