@@ -1,0 +1,26 @@
+# 環境變數
+.env
+sessions.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 日誌
+*.log
+bot.log
+
+# macOS
+.DS_Store
+
+# tmux 日誌
+/tmp/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
