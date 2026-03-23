@@ -263,7 +263,6 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 **啟動與配置：**
 - `bridge.sh` - 統一管理工具（start/stop/restart/status/logs/validate）
-- `start_bridge.sh` - 舊版啟動腳本（仍可用）
 - `sessions.yaml` - 會話配置
 - `.env` - 環境變數
 - `requirements.txt` - Python 依賴

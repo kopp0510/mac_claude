@@ -22,9 +22,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # 手動：前台執行（開發用）
 python3 telegram_bot_multi.py
-
-# 舊版啟動腳本（仍可用）
-./start_bridge.sh
 ```
 
 ### 依賴管理
@@ -62,7 +59,6 @@ pytest --cov
 測試檔案位於 `tests/` 目錄：
 - `test_config.py` - 配置模組測試
 - `test_message_router.py` - 訊息路由器測試
-- `test_output_monitor.py` - 輸出監控測試
 - `test_send_notification.py` - 通知發送測試
 
 配置：`pytest.ini`
@@ -118,7 +114,7 @@ Telegram 用戶
 ### 核心元件
 
 **bridge.sh**
-- 統一 CLI 管理工具，替代 start_bridge.sh
+- 統一 CLI 管理工具
 - 子命令：`start`（後台啟動）、`stop`（優雅停止 + 清理 tmux）、`restart`、`status`、`logs`、`validate`
 - PID 管理：`~/.claude_bridge/bridge.pid`
 - 啟動前自動執行配置驗證（檢查 .env、sessions.yaml、路徑、權限等）
@@ -126,7 +122,6 @@ Telegram 用戶
 **config.py**
 - 集中配置管理，消除魔數
 - 4 個配置 dataclass：`TelegramConfig`、`TmuxConfig`、`QueueConfig`、`SecurityConfig`
-- `MonitorConfig` 保留供 output_monitor.py 參考（主程式不再使用）
 - 全域實例 `config` 和預編譯正則 `patterns`（`CompiledPatterns` 類）
 - 從環境變數讀取 `bot_token`、`allowed_user_ids`、`sessions_config_file`
 
