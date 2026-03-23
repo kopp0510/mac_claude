@@ -11,14 +11,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 執行 Bot
 
 ```bash
-# 推薦：使用啟動腳本（自動處理虛擬環境、依賴、驗證）
-./start_bridge.sh
+# 推薦：使用統一管理工具（後台運行，含配置驗證）
+./bridge.sh start          # 後台啟動
+./bridge.sh stop           # 優雅停止（含清理 tmux）
+./bridge.sh restart        # 重啟
+./bridge.sh status         # 查看狀態
+./bridge.sh logs           # 查看 bot 日誌
+./bridge.sh logs session   # 查看指定會話日誌
+./bridge.sh validate       # 僅驗證配置
 
-# 手動：直接執行
+# 手動：前台執行（開發用）
 python3 telegram_bot_multi.py
 
-# 開發：使用特定 Python 版本
-python3.13 telegram_bot_multi.py
+# 舊版啟動腳本（仍可用）
+./start_bridge.sh
 ```
 
 ### 依賴管理
@@ -74,7 +80,7 @@ tmux attach -t claude-rental
 tmux kill-session -t claude-rental
 
 # 查看會話日誌
-tail -f /tmp/claude_rental.log
+tail -f ~/.claude_bridge/logs/claude_rental.log
 ```
 
 ## 架構說明
@@ -113,7 +119,7 @@ Telegram 用戶
 ```
 Claude Code 輸出
     ↓ (tmux pipe-pane 記錄)
-/tmp/claude_{name}.log
+~/.claude_bridge/logs/claude_{name}.log
     ↓ (可選：OutputMonitor 輪詢)
 MultiSessionMonitor (管理緩衝區)
     ↓ (/buffer 命令查詢)
@@ -121,6 +127,12 @@ Telegram 用戶
 ```
 
 ### 核心元件
+
+**bridge.sh**
+- 統一 CLI 管理工具，替代 start_bridge.sh
+- 子命令：`start`（後台啟動）、`stop`（優雅停止 + 清理 tmux）、`restart`、`status`、`logs`、`validate`
+- PID 管理：`~/.claude_bridge/bridge.pid`
+- 啟動前自動執行配置驗證（檢查 .env、sessions.yaml、路徑、權限等）
 
 **config.py**
 - 集中配置管理，消除魔數
@@ -154,7 +166,7 @@ Telegram 用戶
 - 創建分離的 tmux 會話：`tmux new-session -d -s {name}`
 - 啟用日誌記錄：`tmux pipe-pane -t {session} -o 'cat >> {logfile}'`
 - 發送命令：`tmux send-keys -t {session} -l {text}` 然後 `tmux send-keys Enter`
-- 日誌文件格式：`/tmp/claude_{session_name}.log`
+- 日誌文件格式：`~/.claude_bridge/logs/claude_{session_name}.log`
 - **配置 Claude Code hooks**：在會話創建時自動寫入 `.claude/config.json`，設置 Stop hook 觸發通知腳本
 
 **notify_telegram.sh（新組件 - Hook 腳本）**
@@ -347,7 +359,7 @@ class TelegramConfig:
 
 ### 會話無回應
 1. 檢查 tmux 會話存在：`tmux ls`
-2. 檢查日誌文件存在且正在寫入：`ls -la /tmp/claude_*.log`
+2. 檢查日誌文件存在且正在寫入：`ls -la ~/.claude_bridge/logs/claude_*.log`
 3. 驗證 tmux pipe-pane 是否啟動：連接到會話並檢查日誌輸出
 4. 嘗試 `/restart #session` 重建會話
 
@@ -385,7 +397,7 @@ class TelegramConfig:
 
 - 需要 tmux（在 macOS 上用 Homebrew tmux 測試過）
 - 必須安裝 Claude Code CLI 並在 PATH 中
-- /tmp 中的日誌文件在系統重啟時會被清除
+- 日誌存放在 `~/.claude_bridge/logs/`（持久化，不會因重啟丟失）
 - 需要 Python 3.7+（asyncio 支援）
 - Long Polling 模式需要持續的網路連接
 - 每個會話需要唯一的 tmux 會話名稱
@@ -395,7 +407,7 @@ class TelegramConfig:
 
 ### 基本功能測試
 
-1. 啟動 bot：`./start_bridge.sh`
+1. 啟動 bot：`./bridge.sh start`
 2. 驗證會話已創建：`tmux ls` 應顯示所有配置的會話
 3. **驗證 hook 配置**：檢查每個專案目錄的 `.claude/config.json`
    ```bash
@@ -404,7 +416,7 @@ class TelegramConfig:
    ```
 4. 在 Telegram 發送測試訊息：`#session_name hi`
 5. **驗證 hook 觸發**：應該立即收到 Claude 回應（透過 hook，延遲 < 1 秒）
-6. 如有問題檢查日誌：`tail -f /tmp/claude_session_name.log`
+6. 如有問題檢查日誌：`tail -f ~/.claude_bridge/logs/claude_session_name.log`
 7. 監控 bot 日誌以查看路由和佇列活動
 8. 使用 `/status` 在 Telegram 驗證所有會話都是活躍的
 9. 測試熱重載：編輯 sessions.yaml，使用 `/reload`，驗證變更

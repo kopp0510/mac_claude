@@ -6,6 +6,7 @@ Telegram Bot - Claude Code 多會話並行橋接
 
 import os
 import sys
+import signal
 import logging
 import asyncio
 import queue
@@ -652,6 +653,17 @@ def main():
     logger.info("🚀 Telegram Bot 已啟動（多會話模式）")
     logger.info(f"📝 配置文件: {SESSIONS_CONFIG_FILE}")
     logger.info(f"🖥️  會話數量: {len(bot_state.session_manager.get_all_sessions())}")
+
+    # 設置 signal handler（支援後台優雅停止）
+    def shutdown_handler(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logger.info(f"🛑 收到 {sig_name}，正在關閉...")
+        bot_state.multi_monitor.stop_all()
+        logger.info("👋 已關閉")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
 
     try:
         bot_state.telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)

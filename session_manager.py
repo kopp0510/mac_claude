@@ -14,10 +14,11 @@ class SessionConfig:
     """會話配置"""
 
     def __init__(self, name: str, path: str, tmux_session: str):
+        from config import config as app_config
         self.name = name
         self.path = path
         self.tmux_session = tmux_session
-        self.log_file = f"/tmp/claude_{name}.log"
+        self.log_file = f"{app_config.tmux.LOG_DIR}/claude_{name}.log"
 
 
 class SessionManager:

@@ -100,11 +100,14 @@ sessions:
 ### 5. 啟動
 
 ```bash
-# 推薦：使用啟動腳本（自動處理虛擬環境、依賴、驗證）
-./start_bridge.sh
+# 推薦：後台啟動（含配置驗證、自動安裝依賴）
+./bridge.sh start
 
-# 手動啟動
-python3 telegram_bot_multi.py
+# 查看狀態
+./bridge.sh status
+
+# 停止
+./bridge.sh stop
 ```
 
 ## 使用方法
@@ -154,6 +157,18 @@ Do you want to proceed with editing these 3 files?
   2. No, cancel
 
 [✅ 1. Yes]  [❌ 2. No]  ← 點擊按鈕自動回覆
+```
+
+### 管理命令
+
+```bash
+./bridge.sh start          # 後台啟動 Bot
+./bridge.sh stop           # 停止 Bot 並清理 tmux 會話
+./bridge.sh restart        # 重啟 Bot
+./bridge.sh status         # 查看 Bot 和會話狀態
+./bridge.sh logs           # 查看 Bot 主日誌
+./bridge.sh logs rental    # 查看指定會話日誌
+./bridge.sh validate       # 驗證配置
 ```
 
 ### 連接到終端
@@ -255,7 +270,8 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 - `send_telegram_notification.py` - Telegram API 發送器
 
 **啟動與配置：**
-- `start_bridge.sh` - 一鍵啟動（環境檢查、虛擬環境、依賴安裝）
+- `bridge.sh` - 統一管理工具（start/stop/restart/status/logs/validate）
+- `start_bridge.sh` - 舊版啟動腳本（仍可用）
 - `sessions.yaml` - 會話配置
 - `.env` - 環境變數
 - `requirements.txt` - Python 依賴
@@ -298,10 +314,10 @@ tmux new -s test
 
 ```bash
 # 檢查日誌文件
-ls -la /tmp/claude_*.log
+ls -la ~/.claude_bridge/logs/claude_*.log
 
 # 查看日誌
-tail -f /tmp/claude_rental.log
+tail -f ~/.claude_bridge/logs/claude_rental.log
 ```
 
 ### Bot 無法啟動
@@ -351,10 +367,9 @@ A: tmux 提供會話管理和日誌記錄，是實現雙向通訊的基礎。
 A: 可以！只要伺服器能連接 Telegram API。
 
 **Q: 如何停止橋接？**
-A: 按 `Ctrl+C` 停止 Bot，然後：
+A: 使用管理工具一鍵停止（自動清理所有 tmux 會話）：
 ```bash
-tmux kill-session -t claude-rental
-tmux kill-session -t claude-api
+./bridge.sh stop
 ```
 
 **Q: 如何添加新專案？**

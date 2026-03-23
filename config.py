@@ -44,7 +44,7 @@ class MonitorConfig:
 class TmuxConfig:
     """Tmux 相關配置"""
     # 日誌設定
-    LOG_DIR: str = "/tmp"           # 日誌目錄
+    LOG_DIR: str = os.path.expanduser("~/.claude_bridge/logs")  # 日誌目錄
     LOG_FILE_MODE: int = 0o600      # 日誌文件權限（只有擁有者可讀寫）
 
     # 會話設定
