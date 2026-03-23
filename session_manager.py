@@ -69,7 +69,7 @@ class SessionManager:
 
             if not bridge.session_exists():
                 logger.info(f"📝 創建會話: {name}")
-                if not bridge.create_session(work_dir=config.path):
+                if not bridge.create_session(work_dir=config.path, session_alias=name):
                     logger.error(f"❌ 創建會話失敗: {name}")
                     success = False
             else:
@@ -172,7 +172,7 @@ class SessionManager:
 
         # 創建新會話
         logger.info(f"  創建新會話: {config.tmux_session}")
-        if bridge.create_session(work_dir=config.path):
+        if bridge.create_session(work_dir=config.path, session_alias=name):
             logger.info(f"✅ 會話重啟成功: {name}")
             return True
         else:
