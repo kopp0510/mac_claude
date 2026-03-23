@@ -102,11 +102,29 @@ import re
 
 class CompiledPatterns:
     """預編譯的正則表達式"""
-    # ANSI 控制碼
-    ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    # ANSI 控制碼（含 OSC 序列如 0;⠐ 標題設置）
+    ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07?)')
 
     # 控制字元（保留換行和 tab）
     CONTROL_CHARS = re.compile(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]')
+
+    # Claude Code CLI spinner 和標題碼（如 0;⠐ xxx、0;✳ xxx）
+    CLI_TITLE_CODE = re.compile(r'^0;[⠐⠂⠈⠀⠄⠑⠊⠉✳⠃⠆⠇⠋⠌⠍⠎⠏⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿].*', re.MULTILINE)
+
+    # Claude Code CLI 狀態行（各種變體：In: X | Out: X、數字 | Cached:、T... 等）
+    CLI_STATUS_LINE = re.compile(r'(In:|Out:|Cached:|Total:).*\|', re.MULTILINE)
+
+    # 統計行殘留（數字開頭後接 | Cached 等）
+    CLI_STATS_FRAGMENT = re.compile(r'^\s*\d+\s*\|.*(?:Cached|Out|In|Total)', re.MULTILINE)
+
+    # cwd 行（各種變體）
+    CLI_CWD_LINE = re.compile(r'(?:^|\s)(?:cwd:|Users/)\S*/project/\S*', re.MULTILINE)
+
+    # T... 路徑截斷
+    CLI_TRUNCATED_PATH = re.compile(r'T\.{3}\S*/\S*', re.MULTILINE)
+
+    # 提示符行（只有 ❯ 或 > 和空白）
+    CLI_PROMPT_LINE = re.compile(r'^\s*❯\s*$', re.MULTILINE)
 
     # 多餘空行
     MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
@@ -131,7 +149,10 @@ class CompiledPatterns:
         'Whisking…', 'Wibbling…', 'Thinking…',
         'esc to interrupt', 'Press shift+tab',
         '? for shortcuts', 'Plan Mode',
-        'Contemplating', 'Crafting'
+        'Contemplating', 'Crafting',
+        'Sprouting', 'Brewing', 'Pondering',
+        'Gathering', 'Composing', 'Assembling',
+        '(thinking)', 'thinking)',
     ]
 
 

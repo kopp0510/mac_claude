@@ -274,6 +274,14 @@ class OutputMonitor:
         # 1. 清除 ANSI 控制碼
         text = self.clean_ansi_codes(text)
 
+        # 1.5 清除 Claude Code CLI 特有的控制碼和 UI 元素
+        text = patterns.CLI_TITLE_CODE.sub('', text)
+        text = patterns.CLI_STATUS_LINE.sub('', text)
+        text = patterns.CLI_STATS_FRAGMENT.sub('', text)
+        text = patterns.CLI_CWD_LINE.sub('', text)
+        text = patterns.CLI_TRUNCATED_PATH.sub('', text)
+        text = patterns.CLI_PROMPT_LINE.sub('', text)
+
         # 2. 嘗試提取實際回覆
         actual_response = self.extract_actual_response(text)
         if actual_response is not None:

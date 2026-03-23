@@ -2,6 +2,7 @@
 """
 Telegram Bot - Claude Code 多會話並行橋接
 支援同時管理多個 Claude Code 實例
+透過 Hook 機制即時接收 Claude 回應
 """
 
 import os
@@ -12,16 +13,13 @@ import asyncio
 import queue
 import threading
 import yaml
-from io import BytesIO
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Callable
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from typing import Optional
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 from session_manager import SessionManager
 from message_router import MessageRouter
-from multi_session_monitor import MultiSessionMonitor
-from output_monitor import MessageFormatter
 from config import config as app_config
 
 # 載入環境變數
@@ -45,19 +43,15 @@ logging.getLogger('telegram').setLevel(logging.WARNING)
 
 @dataclass
 class BotState:
-    """Bot 狀態管理類，替代全域變數"""
+    """Bot 狀態管理類"""
     session_manager: Optional[SessionManager] = None
     message_router: Optional[MessageRouter] = None
-    multi_monitor: Optional[MultiSessionMonitor] = None
     telegram_app: Optional[Application] = None
     telegram_chat_id: Optional[int] = None
 
-    # 使用有大小限制的佇列
+    # 訊息佇列（Telegram → Claude）
     message_queue: queue.Queue = field(
         default_factory=lambda: queue.Queue(maxsize=app_config.queue.MESSAGE_QUEUE_SIZE)
-    )
-    output_queue: queue.Queue = field(
-        default_factory=lambda: queue.Queue(maxsize=app_config.queue.OUTPUT_QUEUE_SIZE)
     )
 
     # 執行緒鎖，用於保護狀態更新
@@ -101,8 +95,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sessions_list = bot_state.message_router.format_session_list() if bot_state.message_router else "尚未初始化"
 
-    welcome_message = f"""
-🤖 Claude Code 多會話橋接 Bot
+    welcome_message = f"""🤖 Claude Code 多會話橋接 Bot
 
 {sessions_list}
 
@@ -110,8 +103,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /start - 顯示此幫助訊息
 /status - 查看所有會話狀態
 /sessions - 查看會話列表
-/buffer #session - 獲取指定會話的緩衝區內容
-/clear #session - 清空指定會話的緩衝區
 /restart #session - 重啟指定會話
 /reload - 重新載入 sessions.yaml 配置
 """
@@ -133,7 +124,8 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{status_emoji} #{name}")
         lines.append(f"   路徑: {info['path']}")
         lines.append(f"   tmux: {info['tmux_session']}")
-        lines.append(f"   狀態: {'運行中' if info['exists'] else '未啟動'}\n")
+        lines.append(f"   狀態: {'運行中' if info['exists'] else '未啟動'}")
+        lines.append(f"   通知: Hook 驅動\n")
 
     await update.message.reply_text('\n'.join(lines))
 
@@ -146,50 +138,6 @@ async def sessions_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sessions_text = bot_state.message_router.format_session_list() if bot_state.message_router else "❌ 系統未初始化"
     await update.message.reply_text(sessions_text)
-
-
-async def get_buffer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """獲取指定會話的緩衝區內容"""
-    if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
-        return
-
-    # 解析參數
-    if not context.args:
-        await update.message.reply_text("❌ 請指定會話名稱，例如: /buffer #rental")
-        return
-
-    session_name = context.args[0].replace('#', '').replace('@', '')
-    buffer_content = bot_state.multi_monitor.get_buffer(session_name)
-
-    if not buffer_content:
-        await update.message.reply_text(f"📭 #{session_name} 緩衝區為空")
-        return
-
-    messages = MessageFormatter.format_for_telegram(buffer_content)
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get('type') == 'file':
-            await update.message.reply_document(
-                document=BytesIO(msg['content'].encode('utf-8')),
-                filename=msg['filename']
-            )
-        else:
-            await update.message.reply_text(f"[#{session_name}]\n{msg}")
-
-
-async def clear_buffer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """清空指定會話的緩衝區"""
-    if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
-        return
-
-    if not context.args:
-        await update.message.reply_text("❌ 請指定會話名稱，例如: /clear #rental")
-        return
-
-    session_name = context.args[0].replace('#', '').replace('@', '')
-    bot_state.multi_monitor.clear_buffer(session_name)
-    await update.message.reply_text(f"🗑️ #{session_name} 緩衝區已清空")
 
 
 async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,8 +163,6 @@ async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success = bot_state.session_manager.restart_session(session_name)
 
     if success:
-        # 清空緩衝區
-        bot_state.multi_monitor.clear_buffer(session_name)
         await update.message.reply_text(f"✅ #{session_name} 已成功重啟")
     else:
         await update.message.reply_text(f"❌ #{session_name} 重啟失敗，請查看日誌")
@@ -275,12 +221,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ {routes[0][1]}")
         return
 
-    # 將訊息放入佇列（有大小限制）
-    queued_count = 0
+    # 將訊息放入佇列
     for session_name, actual_message in routes:
         try:
             bot_state.message_queue.put_nowait((session_name, actual_message))
-            queued_count += 1
         except queue.Full:
             await update.message.reply_text("⚠️ 訊息佇列已滿，請稍後再試")
             return
@@ -292,7 +236,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         confirm_text = f"✅ 已發送給 {len(target_names)} 個會話"
 
-    confirm_text += f"\n⏳ 佇列中有 {bot_state.message_queue.qsize()} 條訊息"
     await update.message.reply_text(confirm_text)
 
 
@@ -309,14 +252,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 解析回調數據: choice_{session}:{num}
     data = query.data
     if data.startswith('choice_'):
-        # 移除 'choice_' 前綴後，用 ':' 分割 session_name 和 choice
         payload = data[7:]  # 移除 'choice_'
         parts = payload.rsplit(':', 1)  # 從右邊分割一次
         if len(parts) == 2:
             session_name = parts[0]
             choice = parts[1]
 
-            # 發送選擇到對應會話（有大小限制）
             try:
                 bot_state.message_queue.put_nowait((session_name, choice))
             except queue.Full:
@@ -326,127 +267,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # 更新訊息
             await query.edit_message_text(
                 text=f"{query.message.text}\n\n✅ [#{session_name}] 已選擇: {choice}",
                 reply_markup=None
             )
 
 
-async def send_messages_to_telegram(chat_id: int, session_name: str,
-                                     messages: List[Any],
-                                     confirmation: Optional[Dict] = None):
-    """
-    發送訊息到 Telegram
-
-    Args:
-        chat_id: 聊天 ID
-        session_name: 會話名稱
-        messages: 訊息列表
-        confirmation: 確認提示資訊
-    """
-    if not bot_state.telegram_app or not chat_id:
-        logger.error("Telegram app 或 chat_id 未初始化")
-        return
-
-    try:
-        for msg in messages:
-            if isinstance(msg, dict) and msg.get('type') == 'file':
-                await bot_state.telegram_app.bot.send_document(
-                    chat_id=chat_id,
-                    document=BytesIO(msg['content'].encode('utf-8')),
-                    filename=msg['filename'],
-                    caption=f"📄 [#{session_name}] Claude Code 輸出"
-                )
-            else:
-                # 添加來源標記
-                tagged_msg = f"[#{session_name}]\n{msg}"
-
-                reply_markup = None
-
-                # 如果有確認提示，添加 Inline Keyboard
-                if confirmation and confirmation.get('options'):
-                    keyboard = []
-                    for option in confirmation['options']:
-                        num = option['num']
-                        text = option['text']
-
-                        if 'Yes' in text and 'allow all' in text:
-                            button_text = f"✅ {num}. 允許所有編輯"
-                        elif 'Yes' in text:
-                            button_text = f"✅ {num}. Yes"
-                        elif 'No' in text:
-                            button_text = f"❌ {num}. No"
-                        else:
-                            button_text = f"{num}. {text[:20]}"
-
-                        # callback_data 包含會話名稱，使用 : 作為分隔符避免與底線衝突
-                        keyboard.append([InlineKeyboardButton(
-                            button_text,
-                            callback_data=f"choice_{session_name}:{num}"
-                        )])
-
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-
-                await bot_state.telegram_app.bot.send_message(
-                    chat_id=chat_id,
-                    text=tagged_msg,
-                    reply_markup=reply_markup
-                )
-
-    except Exception as e:
-        logger.error(f"發送訊息到 Telegram 失敗: {e}")
-
-
-def on_output_complete(session_name: str, output: str):
-    """
-    當 Claude Code 輸出完成時的回調
-
-    Args:
-        session_name: 會話名稱
-        output: 完整的輸出內容
-    """
-    if not bot_state.telegram_chat_id:
-        logger.warning("沒有活動的 Telegram 聊天")
-        return
-
-    if not output or len(output.strip()) < app_config.monitor.MIN_RESPONSE_LENGTH:
-        logger.info(f"[#{session_name}] 輸出太短，忽略")
-        return
-
-    logger.info(f"[#{session_name}] 收到完整輸出: {len(output)} 字元")
-
-    # 檢測確認提示
-    confirmation = bot_state.multi_monitor.detect_confirmation(session_name, output)
-
-    # 格式化訊息
-    messages = MessageFormatter.format_for_telegram(output)
-
-    if messages:
-        try:
-            bot_state.output_queue.put_nowait({
-                'chat_id': bot_state.telegram_chat_id,
-                'session_name': session_name,
-                'messages': messages,
-                'confirmation': confirmation
-            })
-        except queue.Full:
-            logger.warning(f"[#{session_name}] 輸出佇列已滿，訊息被丟棄")
-    else:
-        logger.info(f"[#{session_name}] 格式化後沒有有效訊息，忽略")
-
-
 def message_queue_processor():
-    """處理訊息佇列"""
+    """處理訊息佇列（Telegram → Claude）"""
     while True:
         try:
             item = bot_state.message_queue.get(timeout=app_config.queue.QUEUE_TIMEOUT)
             session_name, message = item
 
             logger.info(f"[#{session_name}] 處理訊息: {message[:50]}...")
-
-            # 暫時清空該會話的緩衝區
-            bot_state.multi_monitor.clear_buffer(session_name)
 
             # 發送到對應會話
             bot_state.session_manager.send_to_session(session_name, message)
@@ -464,7 +298,6 @@ def load_sessions_config():
     """載入會話配置"""
     session_manager = SessionManager()
 
-    # 載入配置文件
     try:
         with open(SESSIONS_CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -495,26 +328,18 @@ def load_sessions_config():
 
 
 def reload_sessions_config():
-    """
-    熱重載會話配置
-
-    Returns:
-        tuple: (success: bool, message: str, changes: dict)
-    """
+    """熱重載會話配置"""
     try:
-        # 載入新配置
         with open(SESSIONS_CONFIG_FILE, 'r', encoding='utf-8') as f:
             new_config = yaml.safe_load(f)
 
         if not new_config or 'sessions' not in new_config:
             return False, f"配置文件格式錯誤: {SESSIONS_CONFIG_FILE}", {}
 
-        # 獲取當前會話列表
         old_sessions = set(bot_state.session_manager.get_all_sessions())
         new_sessions_config = {s['name']: s for s in new_config['sessions']}
         new_sessions = set(new_sessions_config.keys())
 
-        # 計算變更
         added = new_sessions - old_sessions
         removed = old_sessions - new_sessions
         kept = old_sessions & new_sessions
@@ -527,16 +352,14 @@ def reload_sessions_config():
 
         logger.info(f"🔄 重載配置: 新增 {len(added)}, 移除 {len(removed)}, 保留 {len(kept)}")
 
-        # 停止被移除會話的監控
+        # 終止被移除會話的 tmux
         for name in removed:
             logger.info(f"  停止會話: {name}")
-            bot_state.multi_monitor.stop_monitor(name)
             bot_state.session_manager.kill_session(name)
 
-        # 創建新的 SessionManager（保留舊會話）
+        # 創建新的 SessionManager
         new_manager = SessionManager()
 
-        # 添加所有新配置的會話
         for session in new_config['sessions']:
             name = session['name']
             path = session['path']
@@ -544,20 +367,16 @@ def reload_sessions_config():
 
             new_manager.add_session(name, path, tmux)
 
-            # 如果是新增的會話，創建 tmux 會話
+            # 新增的會話，創建 tmux 會話
             if name in added:
                 logger.info(f"  新增會話: {name}")
                 bridge = new_manager.get_bridge(name)
                 if not bridge.session_exists():
                     bridge.create_session(work_dir=path)
 
-        # 執行緒安全地更新全域變數
+        # 更新全域狀態
         bot_state.update_session_manager(new_manager)
         bot_state.update_message_router(MessageRouter(new_manager))
-
-        # 為新增的會話設置監控
-        for name in added:
-            bot_state.multi_monitor.add_monitor(name, bot_state.session_manager, on_output_complete)
 
         message = f"✅ 配置已重載\n新增: {len(added)}\n移除: {len(removed)}\n保留: {len(kept)}"
         return True, message, changes
@@ -571,7 +390,7 @@ def reload_sessions_config():
 
 def setup_bridge():
     """設置橋接"""
-    logger.info("🔧 設置多會話橋接...")
+    logger.info("🔧 設置橋接...")
 
     # 載入配置
     load_sessions_config()
@@ -581,20 +400,11 @@ def setup_bridge():
         logger.error("❌ 創建會話失敗")
         sys.exit(1)
 
-    # 初始化多會話監控器
-    bot_state.multi_monitor = MultiSessionMonitor(
-        bot_state.session_manager,
-        idle_timeout=app_config.monitor.IDLE_TIMEOUT
-    )
-
-    # 啟動監控
-    bot_state.multi_monitor.setup_monitors(callback=on_output_complete)
-
     # 啟動訊息佇列處理執行緒
     queue_thread = threading.Thread(target=message_queue_processor, daemon=True)
     queue_thread.start()
 
-    logger.info("✅ 多會話橋接設置完成")
+    logger.info("✅ 橋接設置完成（Hook 驅動通知）")
 
 
 def main():
@@ -613,8 +423,6 @@ def main():
     bot_state.telegram_app.add_handler(CommandHandler("start", start))
     bot_state.telegram_app.add_handler(CommandHandler("status", status))
     bot_state.telegram_app.add_handler(CommandHandler("sessions", sessions_list))
-    bot_state.telegram_app.add_handler(CommandHandler("buffer", get_buffer))
-    bot_state.telegram_app.add_handler(CommandHandler("clear", clear_buffer))
     bot_state.telegram_app.add_handler(CommandHandler("restart", restart_session))
     bot_state.telegram_app.add_handler(CommandHandler("reload", reload_config))
 
@@ -624,41 +432,16 @@ def main():
     # 註冊訊息處理器
     bot_state.telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # 設置輸出佇列處理器
-    async def output_queue_handler(application):
-        while True:
-            try:
-                if not bot_state.output_queue.empty():
-                    item = bot_state.output_queue.get_nowait()
-                    chat_id = item['chat_id']
-                    session_name = item['session_name']
-                    messages = item['messages']
-                    confirmation = item.get('confirmation')
-
-                    await send_messages_to_telegram(chat_id, session_name, messages, confirmation)
-
-                await asyncio.sleep(0.1)
-            except queue.Empty:
-                await asyncio.sleep(0.1)
-            except Exception as e:
-                logger.error(f"處理輸出佇列時錯誤: {e}")
-                await asyncio.sleep(1)
-
-    async def post_init(application):
-        asyncio.create_task(output_queue_handler(application))
-
-    bot_state.telegram_app.post_init = post_init
-
     # 啟動 Bot
-    logger.info("🚀 Telegram Bot 已啟動（多會話模式）")
+    logger.info("🚀 Telegram Bot 已啟動")
     logger.info(f"📝 配置文件: {SESSIONS_CONFIG_FILE}")
     logger.info(f"🖥️  會話數量: {len(bot_state.session_manager.get_all_sessions())}")
+    logger.info("📡 通知方式: Hook 驅動（即時）")
 
     # 設置 signal handler（支援後台優雅停止）
     def shutdown_handler(signum, frame):
         sig_name = signal.Signals(signum).name
         logger.info(f"🛑 收到 {sig_name}，正在關閉...")
-        bot_state.multi_monitor.stop_all()
         logger.info("👋 已關閉")
         sys.exit(0)
 
@@ -669,7 +452,6 @@ def main():
         bot_state.telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
     except KeyboardInterrupt:
         logger.info("\n🛑 正在關閉...")
-        bot_state.multi_monitor.stop_all()
         logger.info("👋 已關閉")
 
 

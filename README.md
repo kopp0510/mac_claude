@@ -141,9 +141,7 @@ sessions:
 - `/start` - 顯示幫助和會話列表
 - `/status` - 查看所有會話狀態
 - `/sessions` - 查看會話列表
-- `/buffer #rental` - 獲取指定會話的緩衝區內容
-- `/clear #rental` - 清空指定會話的緩衝區
-- `/restart #rental` - 重啟指定會話
+- `/restart #session` - 重啟指定會話
 - `/reload` - 重新載入 sessions.yaml 配置（無需重啟 Bot）
 
 ### 互動式按鈕
@@ -226,21 +224,12 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 ## 工作原理
 
-### 即時通知（Hook 驅動 — 主要機制）
+### 即時通知（Hook 驅動）
 
 1. Claude Code 完成回應時觸發 Stop hook
-2. `notify_telegram.sh` 解析 `transcript.json` 提取 assistant 訊息
+2. `notify_telegram.sh` 從 hook stdin 讀取 `last_assistant_message`
 3. `send_telegram_notification.py` 透過 Telegram Bot API 即時推送
-4. 延遲 < 1 秒，事件驅動
-
-### 輸出監控（備用機制）
-
-1. 每個會話的 tmux 將輸出記錄到獨立日誌
-2. `MultiSessionMonitor` 同時監控所有會話
-3. 檢測輸出完成（閒置 8 秒）
-4. 清理 ANSI 碼、過濾處理訊息
-5. 格式化並推送到 Telegram，附上來源標記
-6. 主要用於 `/buffer` 命令查詢歷史輸出
+4. 延遲 < 1 秒，事件驅動，回覆內容乾淨無 ANSI 碼
 
 ### 訊息路由
 
@@ -263,8 +252,6 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 **核心模組：**
 - `session_manager.py` - 會話管理器
 - `message_router.py` - 訊息路由器
-- `multi_session_monitor.py` - 多會話監控器
-- `output_monitor.py` - 輸出監控和過濾
 - `tmux_bridge.py` - Tmux 橋接模組
 - `config.py` - 集中配置管理
 

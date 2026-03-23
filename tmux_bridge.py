@@ -194,43 +194,43 @@ class TmuxBridge:
                 return False
 
             # 設置 Stop hook（當 Claude 完成回應時觸發）
-            hook_config = {
-                "hooks": {
-                    "Stop": [{
-                        "type": "command",
-                        "command": str(hook_script),
-                        "env": {
-                            "TELEGRAM_SESSION_NAME": session_name
-                        }
-                    }]
-                }
-            }
+            # hooks 必須寫入 settings.local.json（不是 config.json）
+            # 格式：hooks.Stop[].hooks[] — 需要內層 hooks 陣列包裝
+            # 環境變數透過 command 前綴傳遞
+            hook_command = f"TELEGRAM_SESSION_NAME={session_name} {hook_script}"
+            stop_hooks = [{
+                "hooks": [{
+                    "type": "command",
+                    "command": hook_command,
+                    "timeout": 30
+                }]
+            }]
 
-            # 寫入 .claude/config.json
+            # 寫入 .claude/settings.local.json
             import json
             config_dir = Path(work_dir) / '.claude'
             config_dir.mkdir(exist_ok=True)
 
-            config_file = config_dir / 'config.json'
+            settings_file = config_dir / 'settings.local.json'
 
-            # 如果已有配置，則合併
-            existing_config = {}
-            if config_file.exists():
+            # 讀取現有設定（保留 permissions 等）
+            existing_settings = {}
+            if settings_file.exists():
                 try:
-                    with open(config_file, 'r', encoding='utf-8') as f:
-                        existing_config = json.load(f)
+                    with open(settings_file, 'r', encoding='utf-8') as f:
+                        existing_settings = json.load(f)
                 except Exception as e:
-                    logger.warning(f"讀取現有配置失敗: {e}")
+                    logger.warning(f"讀取現有設定失敗: {e}")
 
-            # 合併 hooks 配置
-            if 'hooks' not in existing_config:
-                existing_config['hooks'] = {}
+            # 合併 hooks 配置（保留其他設定不動）
+            if 'hooks' not in existing_settings:
+                existing_settings['hooks'] = {}
 
-            existing_config['hooks']['Stop'] = hook_config['hooks']['Stop']
+            existing_settings['hooks']['Stop'] = stop_hooks
 
-            # 寫入配置
-            with open(config_file, 'w', encoding='utf-8') as f:
-                json.dump(existing_config, f, indent=2, ensure_ascii=False)
+            # 寫入設定
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(existing_settings, f, indent=2, ensure_ascii=False)
 
             logger.info(f"已配置 Claude Code hooks: {session_name}")
             return True

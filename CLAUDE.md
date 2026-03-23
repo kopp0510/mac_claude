@@ -104,25 +104,14 @@ TmuxBridge (subprocess 執行)
 Claude Code 實例 (運行在 tmux 中，配置了 hooks）
 ```
 
-**發送回應（Claude → Telegram）** - **使用 Hooks（新架構）**:
+**發送回應（Claude → Telegram）** - **Hook 驅動**:
 ```
 Claude Code 實例完成回應
     ↓ (觸發 Stop hook)
-notify_telegram.sh (解析 transcript.json)
-    ↓ (提取最後的 assistant 訊息)
-send_telegram_notification.py (格式化訊息)
-    ↓ (直接呼叫 Telegram Bot API)
-Telegram 用戶
-```
-
-**緩衝區和日誌（保留用於 /buffer 命令）**:
-```
-Claude Code 輸出
-    ↓ (tmux pipe-pane 記錄)
-~/.claude_bridge/logs/claude_{name}.log
-    ↓ (可選：OutputMonitor 輪詢)
-MultiSessionMonitor (管理緩衝區)
-    ↓ (/buffer 命令查詢)
+notify_telegram.sh (從 stdin 讀取 last_assistant_message)
+    ↓ (格式化訊息)
+send_telegram_notification.py (呼叫 Telegram Bot API)
+    ↓ (即時推送，延遲 < 1 秒)
 Telegram 用戶
 ```
 
@@ -143,9 +132,9 @@ Telegram 用戶
 **telegram_bot_multi.py**
 - 入口點和主事件循環
 - 使用 python-telegram-bot 的 Long Polling 模式（不是 Webhook）
-- `BotState` dataclass 管理全域狀態，含 `threading.Lock` 保護 session_manager 和 message_router 的執行緒安全更新
-- 兩個 `queue.Queue`（sync）佇列：`message_queue` 處理接收，`output_queue` 處理發送（透過 async wrapper 消費）
-- 佇列有大小限制（來自 `config.queue`）
+- `BotState` dataclass 管理全域狀態，含 `threading.Lock` 保護執行緒安全更新
+- `message_queue`（sync `queue.Queue`）處理 Telegram → Claude 訊息
+- Claude → Telegram 回應完全由 Hook 機制處理（不再使用 output_queue）
 - 按鈕回調數據格式：`choice_{session_name}:{num}`（冒號分隔符避免會話名稱中的底線造成問題）
 - **重要**：新增命令時需使用 `telegram_app.add_handler(CommandHandler(...))` 註冊
 
@@ -167,56 +156,35 @@ Telegram 用戶
 - 啟用日誌記錄：`tmux pipe-pane -t {session} -o 'cat >> {logfile}'`
 - 發送命令：`tmux send-keys -t {session} -l {text}` 然後 `tmux send-keys Enter`
 - 日誌文件格式：`~/.claude_bridge/logs/claude_{session_name}.log`
-- **配置 Claude Code hooks**：在會話創建時自動寫入 `.claude/config.json`，設置 Stop hook 觸發通知腳本
+- **配置 Claude Code hooks**：在會話創建時自動寫入 `.claude/settings.local.json`，設置 Stop hook 觸發通知腳本
 
-**notify_telegram.sh（新組件 - Hook 腳本）**
+**notify_telegram.sh（Hook 腳本）**
 - 由 Claude Code 的 Stop hook 觸發（當 Claude 完成回應時）
-- 從 stdin 接收 hook 數據（JSON 格式，包含 session_id、transcript_path）
-- 透過環境變數 `TELEGRAM_SESSION_NAME` 識別會話
-- 解析 transcript.json 提取最後的 assistant 訊息
+- 從 stdin JSON 讀取 `last_assistant_message`（優先）或 fallback 解析 transcript
+- 透過 command 前綴傳遞 `TELEGRAM_SESSION_NAME` 環境變數
+- 使用 venv 的 Python 確保依賴可用
 - 調用 `send_telegram_notification.py` 發送到 Telegram
 
-**send_telegram_notification.py（新組件 - Telegram 發送器）**
+**send_telegram_notification.py（Telegram 發送器）**
 - 獨立的 Python 腳本，直接呼叫 Telegram Bot API
 - 從 .env 讀取 `TELEGRAM_BOT_TOKEN` 和 `ALLOWED_USER_IDS`
 - 處理訊息格式化（Markdown、截斷長訊息）
-- 發送到所有授權用戶的 chat ID
-- **優勢**：即時、事件驅動，無需輪詢
-
-**OutputMonitor (output_monitor.py)** - **保留用於緩衝區功能**
-- 基於文件的監控（tmux pipe-pane 輸出）
-- 主要用於 `/buffer` 命令查詢歷史輸出
-- 過濾掉：ANSI 碼、"Whisking"、"Contemplating"、工具調用細節
-- 偵測確認提示：類似 "1. Yes" "2. No" 的模式
-- **訊息格式化**：<4000 字元 = 單條訊息，4000-12000 = 分段並標記 [1/3]，>12000 = 上傳為 .txt 文件
-
-**MultiSessionMonitor (multi_session_monitor.py)** - **保留用於緩衝區管理**
-- 為每個會話創建一個 OutputMonitor 執行緒
-- 管理輸出緩衝區供 `/buffer` 命令使用
-- 回調包裝器模式：`make_callback(session_name)` 注入會話上下文
-- `add_monitor()` 用於熱重載時動態添加會話
-- `stop_monitor()` 用於移除會話
+- 發送到所有授權用戶的 chat ID，含重試機制
 
 ### 關鍵架構決策
 
-1. **Hook 驅動通知（新）**：使用 Claude Code 的 Stop hook 事件驅動通知，取代輪詢機制
-   - **優勢**：即時、準確、低延遲、直接從 transcript.json 獲取結構化數據
-   - **實現**：TmuxBridge 創建會話時自動配置 `.claude/config.json` 的 hooks 設置
-   - **環境變數傳遞**：透過 hook 配置的 `env` 欄位傳遞 `TELEGRAM_SESSION_NAME`
+1. **Hook 驅動通知**：使用 Claude Code 的 Stop hook 事件驅動通知
+   - **優勢**：即時、準確、低延遲、直接從結構化數據獲取乾淨的回覆
+   - **實現**：TmuxBridge 創建會話時自動配置 `.claude/settings.local.json` 的 hooks 設置
+   - **環境變數傳遞**：透過 command 前綴傳遞 `TELEGRAM_SESSION_NAME`
 
-2. **雙佇列系統**：`message_queue` 和 `output_queue` 都是 `queue.Queue`（sync），`output_queue` 透過 async wrapper（`output_queue_handler`）在事件循環中消費。選用 sync queue 是因為 tmux 操作在同步執行緒中執行
+2. **單向佇列**：`message_queue`（sync `queue.Queue`）處理 Telegram → Claude 訊息。Claude → Telegram 完全由 Hook 處理，無需佇列
 
-3. **基於文件的日誌**：tmux pipe-pane 寫入文件，保留用於 `/buffer` 命令查詢歷史輸出
+3. **會話隔離**：每個 Claude Code 實例運行在獨立的 tmux 會話中，有專用的日誌文件。會話之間不會互相干擾
 
-4. **會話隔離**：每個 Claude Code 實例運行在獨立的 tmux 會話中，有專用的日誌文件。會話之間不會互相干擾
+4. **無預設會話**：強制明確的 `#session` 路由，防止意外將命令發送到錯誤的專案
 
-5. **無預設會話**：強制明確的 `#session` 路由，防止意外將命令發送到錯誤的專案
-
-6. **回調中的冒號分隔符**：按鈕 callback_data 使用 `choice_{session}:{num}` 而不是底線，以支援像 "mac_claude" 這樣的會話名稱
-
-7. **雙通知機制（過渡期）**：
-   - **主要**：Hook 驅動（notify_telegram.sh → send_telegram_notification.py → Telegram API）
-   - **備用**：OutputMonitor 輪詢（保留用於緩衝區和舊版相容）
+5. **回調中的冒號分隔符**：按鈕 callback_data 使用 `choice_{session}:{num}` 而不是底線，以支援像 "mac_claude" 這樣的會話名稱
 
 ## 配置說明
 
@@ -245,26 +213,28 @@ SESSIONS_CONFIG_FILE=sessions.yaml  # 可選，預設為 sessions.yaml
 
 ### Claude Code Hooks 配置（自動生成）
 
-當 TmuxBridge 創建新會話時，會自動在專案目錄創建 `.claude/config.json`：
+當 TmuxBridge 創建新會話時，會自動在專案目錄的 `.claude/settings.local.json` 中寫入 hooks：
 
 ```json
 {
   "hooks": {
     "Stop": [{
-      "type": "command",
-      "command": "/path/to/mac_claude/notify_telegram.sh",
-      "env": {
-        "TELEGRAM_SESSION_NAME": "session_name"
-      }
+      "hooks": [{
+        "type": "command",
+        "command": "TELEGRAM_SESSION_NAME=session_name /path/to/mac_claude/notify_telegram.sh",
+        "timeout": 30
+      }]
     }]
   }
 }
 ```
 
+**注意**：hooks 必須在 `settings.local.json`（不是 `config.json`），Claude Code 只從 settings 檔案讀取 hooks。
+
 **手動驗證 hooks 配置**：
 ```bash
 # 查看專案的 hook 配置
-cat /path/to/project/.claude/config.json
+cat /path/to/project/.claude/settings.local.json
 
 # 測試 hook 腳本（需要設置環境變數）
 export TELEGRAM_SESSION_NAME=test
@@ -293,10 +263,8 @@ echo '{"transcript_path": "/path/to/transcript.json"}' | ./notify_telegram.sh
 
 現有命令：
 - `/start` - 顯示幫助和會話列表
-- `/status` - 顯示所有會話的 tmux 會話狀態
+- `/status` - 顯示所有會話狀態（含 Hook 通知狀態）
 - `/sessions` - 列出配置的會話
-- `/buffer #session` - 顯示會話的緩存輸出
-- `/clear #session` - 清空會話的輸出緩衝區
 - `/restart #session` - 終止並重建 tmux 會話
 - `/reload` - 熱重載 sessions.yaml 無需重啟 bot
 
