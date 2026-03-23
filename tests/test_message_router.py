@@ -16,7 +16,14 @@ class TestMessageRouter:
         """建立模擬的 SessionManager"""
         manager = MagicMock()
         manager.get_all_sessions.return_value = ['rental', 'mac_claude', 'test']
-        manager.get_session.side_effect = lambda name: name in ['rental', 'mac_claude', 'test']
+
+        # get_session 需要回傳帶 path/tmux_session 屬性的物件，或不存在時回傳 None
+        valid_sessions = {
+            'rental': MagicMock(path='/tmp/rental', tmux_session='claude-rental'),
+            'mac_claude': MagicMock(path='/tmp/mac_claude', tmux_session='claude-mac_claude'),
+            'test': MagicMock(path='/tmp/test', tmux_session='claude-test'),
+        }
+        manager.get_session.side_effect = lambda name: valid_sessions.get(name)
         return manager
 
     @pytest.fixture

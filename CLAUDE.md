@@ -125,7 +125,8 @@ Telegram 用戶
 
 **config.py**
 - 集中配置管理，消除魔數
-- 5 個配置 dataclass：`TelegramConfig`、`MonitorConfig`、`TmuxConfig`、`QueueConfig`、`SecurityConfig`
+- 4 個配置 dataclass：`TelegramConfig`、`TmuxConfig`、`QueueConfig`、`SecurityConfig`
+- `MonitorConfig` 保留供 output_monitor.py 參考（主程式不再使用）
 - 全域實例 `config` 和預編譯正則 `patterns`（`CompiledPatterns` 類）
 - 從環境變數讀取 `bot_token`、`allowed_user_ids`、`sessions_config_file`
 
@@ -274,49 +275,23 @@ echo '{"transcript_path": "/path/to/transcript.json"}' | ./notify_telegram.sh
 
 1. 載入新的 sessions.yaml
 2. 與當前會話比較（新增/移除/保留）
-3. 停止已移除會話的監控器
-4. 終止已移除會話的 tmux 會話
-5. 用新配置中的所有會話創建新的 SessionManager
-6. 為新增的會話創建 tmux 會話
-7. 為新增的會話添加監控器
-8. 更新全域的 `session_manager` 和 `message_router` 引用
+3. 終止已移除會話的 tmux 會話
+4. 用新配置中的所有會話創建新的 SessionManager
+5. 為新增的會話創建 tmux 會話（含 Hook 配置）
+6. 更新全域的 `session_manager` 和 `message_router` 引用
 
 **關鍵要點**：保留的會話持續運行；只有新增/移除的會話會受影響。
 
 ## 常見修改
 
-### 調整閒置超時
+### 更改訊息截斷閾值
 
-編輯 config.py 的 `MonitorConfig.IDLE_TIMEOUT`（預設 8.0 秒）：
-```python
-@dataclass
-class MonitorConfig:
-    IDLE_TIMEOUT: float = 8.0  # 修改此值
-```
+編輯 `send_telegram_notification.py` 的 `MAX_MESSAGE_LENGTH`（預設 4000）。
+超過此長度的 Hook 回覆會被截斷並標註 `[Message truncated]`。
 
-如果 Claude 回應被截斷則增加，如需更快回應時間則減少。
+### 調整 Hook 超時
 
-### 添加輸出過濾器
-
-編輯 output_monitor.py 的 `clean_output()` 方法。當前過濾器包括：
-- 進度訊息的關鍵字（定義在 config.py 的 `CompiledPatterns.PROCESSING_KEYWORDS`）
-- ANSI 轉義碼移除（`CompiledPatterns.ANSI_ESCAPE`）
-- 工具調用清理（`CompiledPatterns.TOOL_INVOKE`）
-- 文件內容截斷
-
-### 更改訊息格式閾值
-
-編輯 config.py 的 `TelegramConfig`：
-```python
-@dataclass
-class TelegramConfig:
-    MAX_MESSAGE_LENGTH: int = 4000   # 單條訊息最大長度
-    MAX_TOTAL_LENGTH: int = 12000    # 超過此長度上傳為文件
-```
-
-### 支援新的確認提示模式
-
-編輯 config.py 的 `CompiledPatterns.CONFIRMATION_OPTION`。當前正則：`r'^\s*[❯]?\s*(\d+)\.\s*(.+)'`
+編輯 `tmux_bridge.py` 的 `_configure_claude_hooks()` 中的 `"timeout": 30`（預設 30 秒）。
 
 ## 故障排除
 
@@ -331,27 +306,24 @@ class TelegramConfig:
 3. 驗證 tmux pipe-pane 是否啟動：連接到會話並檢查日誌輸出
 4. 嘗試 `/restart #session` 重建會話
 
-### 輸出未出現在 Telegram（使用 Hook 機制）
-1. **檢查 hook 配置**：確認專案目錄有 `.claude/config.json` 且包含 Stop hook
+### 輸出未出現在 Telegram（Hook 機制）
+1. **檢查 hook 配置**：確認專案目錄 `.claude/settings.local.json` 包含 Stop hook
    ```bash
-   cat /path/to/project/.claude/config.json
+   cat /path/to/project/.claude/settings.local.json | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin).get('hooks',{}), indent=2))"
    ```
 2. **檢查 hook 腳本權限**：確認 `notify_telegram.sh` 可執行
    ```bash
    ls -la notify_telegram.sh send_telegram_notification.py
    ```
-3. **測試 hook 腳本**：手動執行測試
+3. **查看 hook 除錯日誌**：
    ```bash
-   export TELEGRAM_SESSION_NAME=test
-   echo '{"transcript_path": "/Users/.../.claude/transcripts/xxx.json"}' | ./notify_telegram.sh
+   cat ~/.claude_bridge/logs/hook_debug_*.log
    ```
 4. **檢查 Telegram Bot Token**：確認 .env 中的 TELEGRAM_BOT_TOKEN 正確
 5. **查看 Claude 日誌**：連接到 tmux 會話查看 hook 是否有錯誤訊息
    ```bash
    tmux attach -t <tmux_session_name>  # tmux 名稱見 sessions.yaml 的 tmux 欄位
    ```
-6. **備用方案**：如果 hook 失敗，OutputMonitor 仍會輪詢並發送（延遲較高）
-7. 使用 `/buffer #session` 查看原始緩衝輸出
 
 ### 除錯工具
 
@@ -375,59 +347,22 @@ class TelegramConfig:
 
 ### 基本功能測試
 
-1. 啟動 bot：`./bridge.sh start`
-2. 驗證會話已創建：`tmux ls` 應顯示所有配置的會話
-3. **驗證 hook 配置**：檢查每個專案目錄的 `.claude/config.json`
-   ```bash
-   # 應該看到 Stop hook 配置
-   cat /path/to/project/.claude/config.json | jq .hooks.Stop
-   ```
-4. 在 Telegram 發送測試訊息：`#session_name hi`
-5. **驗證 hook 觸發**：應該立即收到 Claude 回應（透過 hook，延遲 < 1 秒）
-6. 如有問題檢查日誌：`tail -f ~/.claude_bridge/logs/claude_session_name.log`
-7. 監控 bot 日誌以查看路由和佇列活動
-8. 使用 `/status` 在 Telegram 驗證所有會話都是活躍的
-9. 測試熱重載：編輯 sessions.yaml，使用 `/reload`，驗證變更
+1. 驗證配置：`./bridge.sh validate`
+2. 啟動 bot：`./bridge.sh start`
+3. 驗證狀態：`./bridge.sh status`（應顯示 Bot 運行中 + tmux 會話）
+4. 在 Telegram 發送 `/start` 確認 bot 回應
+5. 發送測試訊息：`#session_name 你好`
+6. **驗證 hook 觸發**：應收到 `📍 session_name` 格式的乾淨回覆（延遲 < 1 秒）
+7. 查看日誌：`./bridge.sh logs`
+8. 測試熱重載：編輯 sessions.yaml，使用 `/reload`，驗證變更
+9. 停止：`./bridge.sh stop`（應清理所有 tmux 會話）
 
-### Hook 整合測試
+### 單元測試
 
-1. **測試 hook 腳本獨立運行**：
-   ```bash
-   # 創建測試 transcript
-   mkdir -p /tmp/test_transcript
-   echo '{"messages": [{"role": "assistant", "content": [{"type": "text", "text": "Test message"}]}]}' > /tmp/test_transcript/test.json
-
-   # 測試 hook
-   export TELEGRAM_SESSION_NAME=test
-   echo '{"transcript_path": "/tmp/test_transcript/test.json"}' | ./notify_telegram.sh
-
-   # 應該在 Telegram 收到 "📍 test\n\nTest message"
-   ```
-
-2. **測試完整流程**：
-   ```bash
-   # 發送訊息到 Claude
-   #test_session hello
-
-   # 監控 tmux 會話查看 hook 執行
-   tmux attach -t claude-test_session
-
-   # 當 Claude 回應完成時，應該看到 hook 執行並立即收到 Telegram 通知
-   ```
-
-3. **驗證舊機制備用**：
-   ```bash
-   # 暫時移除 hook 配置
-   mv /path/to/project/.claude/config.json /path/to/project/.claude/config.json.bak
-
-   # 重啟會話
-   /restart #session_name
-
-   # 發送測試訊息，應該仍能收到回應（透過 OutputMonitor，延遲約 8 秒）
-
-   # 恢復 hook 配置
-   mv /path/to/project/.claude/config.json.bak /path/to/project/.claude/config.json
-   ```
+```bash
+pytest tests/ -v
+# 應該 37 個測試全部通過
+```
 
 ## 安全注意事項
 

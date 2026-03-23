@@ -83,8 +83,14 @@ def send_to_chat(bot_token: str, chat_id: str, message: str) -> bool:
     """
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
+    try:
+        numeric_chat_id = int(chat_id)
+    except ValueError:
+        logger.error(f"Invalid chat_id '{chat_id}': not a valid integer")
+        return False
+
     payload = {
-        'chat_id': int(chat_id),  # 修復：確保 chat_id 是整數
+        'chat_id': numeric_chat_id,
         'text': message,
         'parse_mode': 'Markdown',
         'disable_web_page_preview': True
@@ -132,11 +138,6 @@ def send_to_chat(bot_token: str, chat_id: str, message: str) -> bool:
         except RequestException as e:
             last_error = f"Request error: {e}"
             logger.warning(f"Attempt {attempt + 1}/{MAX_RETRIES}: {last_error}")
-
-        except ValueError as e:
-            # chat_id 轉換錯誤
-            logger.error(f"Invalid chat_id '{chat_id}': {e}")
-            return False
 
         except Exception as e:
             last_error = f"Unexpected error: {e}"

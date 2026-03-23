@@ -9,8 +9,8 @@ import os
 import sys
 import signal
 import logging
-import asyncio
 import queue
+import time
 import threading
 import yaml
 from dataclasses import dataclass, field
@@ -230,11 +230,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # 發送確認
-    target_names = [name for name, _ in routes]
-    if len(target_names) == 1:
-        confirm_text = f"✅ 已發送給 #{target_names[0]}"
+    if len(routes) == 1:
+        confirm_text = f"✅ 已發送給 #{routes[0][0]}"
     else:
-        confirm_text = f"✅ 已發送給 {len(target_names)} 個會話"
+        confirm_text = f"✅ 已發送給 {len(routes)} 個會話"
 
     await update.message.reply_text(confirm_text)
 
@@ -251,26 +250,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 解析回調數據: choice_{session}:{num}
     data = query.data
-    if data.startswith('choice_'):
-        payload = data[7:]  # 移除 'choice_'
-        parts = payload.rsplit(':', 1)  # 從右邊分割一次
-        if len(parts) == 2:
-            session_name = parts[0]
-            choice = parts[1]
+    if not data.startswith('choice_'):
+        return
 
-            try:
-                bot_state.message_queue.put_nowait((session_name, choice))
-            except queue.Full:
-                await query.edit_message_text(
-                    text=f"{query.message.text}\n\n⚠️ 佇列已滿，請稍後再試",
-                    reply_markup=None
-                )
-                return
+    payload = data[7:]  # 移除 'choice_'
+    parts = payload.rsplit(':', 1)  # 從右邊分割一次
+    if len(parts) != 2:
+        return
 
-            await query.edit_message_text(
-                text=f"{query.message.text}\n\n✅ [#{session_name}] 已選擇: {choice}",
-                reply_markup=None
-            )
+    session_name, choice = parts
+
+    try:
+        bot_state.message_queue.put_nowait((session_name, choice))
+    except queue.Full:
+        await query.edit_message_text(
+            text=f"{query.message.text}\n\n⚠️ 佇列已滿，請稍後再試",
+            reply_markup=None
+        )
+        return
+
+    await query.edit_message_text(
+        text=f"{query.message.text}\n\n✅ [#{session_name}] 已選擇: {choice}",
+        reply_markup=None
+    )
 
 
 def message_queue_processor():
@@ -285,7 +287,6 @@ def message_queue_processor():
             # 發送到對應會話
             bot_state.session_manager.send_to_session(session_name, message)
 
-            import time
             time.sleep(app_config.tmux.COMMAND_DELAY)
 
         except queue.Empty:

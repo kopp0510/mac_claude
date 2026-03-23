@@ -6,10 +6,10 @@
 
 - 🔄 **雙向通訊**：Claude Code 的輸出即時推送到 Telegram，Telegram 的訊息也能傳回 Claude Code
 - 🔀 **多會話並行**：同時管理多個 Claude Code 實例，並行執行任務
-- 🏷️ **來源標記**：所有回覆都標記來源 `[#project]`，清楚辨識
+- 🏷️ **來源標記**：所有回覆都標記來源 `📍 project`，清楚辨識
 - 📮 **智能路由**：使用 `#project` 語法指定目標，或 `#all` 廣播給所有會話
 - 🖥️ **同時操作**：可以同時在終端和 Telegram 與 Claude Code 互動
-- 🤖 **智能過濾**：自動識別最終回覆，過濾處理訊息和 ANSI 控制碼
+- 🤖 **Hook 即時通知**：Claude 完成回應時透過 Hook 即時推送，延遲 < 1 秒
 - 🎯 **互動式按鈕**：確認提示自動轉換為 Inline Keyboard 按鈕
 - 📊 **分段發送**：長訊息自動分段，超長內容上傳為文件
 - 🔒 **用戶驗證**：僅允許特定用戶使用
@@ -126,13 +126,15 @@ sessions:
 
 ### 回覆格式
 
-所有回覆都會標記來源：
+所有回覆都會標記來源（Hook 驅動，即時推送）：
 
 ```
-[#rental]
-/Users/你的用戶名/project/rental-management
+📍 rental
 
-[#api]
+這是一個房租管理系統...
+
+📍 api
+
 測試完成！所有測試通過。
 ```
 
@@ -241,8 +243,8 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 ### 並行執行
 
 - 所有會話獨立運行，互不干擾
-- 每個會話有獨立的監控執行緒
-- 回覆按完成順序推送，附上來源標記
+- 每個會話有獨立的 Hook 通知
+- 回覆按完成順序即時推送，附上來源標記
 
 ## 文件說明
 
@@ -265,21 +267,6 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 - `sessions.yaml` - 會話配置
 - `.env` - 環境變數
 - `requirements.txt` - Python 依賴
-
-## 訊息格式化
-
-- **短訊息**（< 4000 字元）：單條發送
-- **中等長度**（4000-12000 字元）：分段發送，標記 `[1/3]`、`[2/3]`
-- **超長訊息**（> 12000 字元）：上傳為 `.txt` 文件
-
-## 輸出過濾
-
-自動過濾：
-- ✅ 處理訊息（Whisking, Contemplating 等）
-- ✅ ANSI 控制碼（顏色、游標移動）
-- ✅ Tool 調用詳細內容
-- ✅ 分隔線和提示符
-- ✅ 超長文件內容（自動摘要）
 
 ## 安全建議
 
@@ -324,18 +311,17 @@ python3 -c "import telegram; import yaml; import requests"
 ### Hook 通知未觸發
 
 ```bash
-# 檢查 hook 配置是否存在
-cat /path/to/project/.claude/config.json
+# 檢查 hook 配置（必須在 settings.local.json，不是 config.json）
+cat /path/to/project/.claude/settings.local.json
 
 # 檢查 hook 腳本權限
 ls -la notify_telegram.sh send_telegram_notification.py
 
-# 手動測試 hook
-export TELEGRAM_SESSION_NAME=test
-echo '{"transcript_path": "/path/to/transcript.json"}' | ./notify_telegram.sh
-
 # 查看 hook 除錯日誌
 cat ~/.claude_bridge/logs/hook_debug_*.log
+
+# 查看 bot 日誌
+./bridge.sh logs
 ```
 
 ### 訊息未送達

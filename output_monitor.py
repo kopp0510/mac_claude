@@ -73,19 +73,6 @@ class OutputMonitor:
 
         return patterns.TOOL_INVOKE.sub(replace_tool, text)
 
-    def filter_thinking_process(self, text: str) -> str:
-        """
-        過濾 thinking 過程（可選）
-
-        Args:
-            text: 原始文字
-
-        Returns:
-            str: 過濾後的文字
-        """
-        # 暫時保留，因為某些情況下 thinking 包含有用資訊
-        return text
-
     def is_likely_user_input(self, text: str) -> bool:
         """
         判斷是否是用戶輸入或處理過程（而不是 Claude 的最終回覆）
@@ -345,10 +332,7 @@ class OutputMonitor:
                 if idle_time < config.monitor.CONFIRMATION_TIMEOUT:
                     return False
 
-        if idle_time >= self.idle_timeout:
-            return True
-
-        return False
+        return idle_time >= self.idle_timeout
 
     def start_monitoring(self, callback: Optional[Callable[[str], None]] = None):
         """

@@ -5,6 +5,7 @@
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -56,7 +57,6 @@ class TmuxConfig:
 class QueueConfig:
     """佇列相關配置"""
     MESSAGE_QUEUE_SIZE: int = 1000  # 訊息佇列大小限制
-    OUTPUT_QUEUE_SIZE: int = 1000   # 輸出佇列大小限制
     QUEUE_TIMEOUT: float = 1.0      # 佇列讀取超時（秒）
 
 
@@ -97,9 +97,6 @@ class AppConfig:
 config = AppConfig()
 
 
-# 預編譯的正則表達式（用於提升效能）
-import re
-
 class CompiledPatterns:
     """預編譯的正則表達式"""
     # ANSI 控制碼（含 OSC 序列如 0;⠐ 標題設置）
@@ -139,7 +136,7 @@ class CompiledPatterns:
     MESSAGE_ROUTE = re.compile(r'^#([\w\-]+)\s+(.+)$', re.DOTALL)
 
     # 框線字元
-    BOX_CHARS = re.compile(r'^[│╭╰╯├─┤┼]+\s*$')
+    BOX_CHARS = re.compile(r'^[│╭╮╰╯├─┤┼]+\s*$')
 
     # 工具調用
     TOOL_INVOKE = re.compile(r'<invoke name="([^"]+)">.*?</invoke>', re.DOTALL)

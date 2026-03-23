@@ -79,16 +79,7 @@ class SessionManager:
         return success
 
     def send_to_session(self, name: str, message: str) -> bool:
-        """
-        發送訊息到指定會話
-
-        Args:
-            name: 會話名稱
-            message: 訊息內容
-
-        Returns:
-            bool: 是否成功
-        """
+        """發送訊息到指定會話"""
         bridge = self.bridges.get(name)
         if not bridge:
             logger.error(f"❌ 找不到會話: {name}")
@@ -97,28 +88,11 @@ class SessionManager:
         return bridge.send_command(message)
 
     def send_to_all(self, message: str) -> Dict[str, bool]:
-        """
-        發送訊息到所有會話
-
-        Args:
-            message: 訊息內容
-
-        Returns:
-            dict: {session_name: success}
-        """
-        results = {}
-        for name in self.sessions.keys():
-            results[name] = self.send_to_session(name, message)
-
-        return results
+        """發送訊息到所有會話"""
+        return {name: self.send_to_session(name, message) for name in self.sessions}
 
     def get_status(self) -> Dict[str, dict]:
-        """
-        獲取所有會話的狀態
-
-        Returns:
-            dict: {session_name: status_info}
-        """
+        """獲取所有會話的狀態"""
         status = {}
 
         for name, bridge in self.bridges.items():
@@ -144,19 +118,11 @@ class SessionManager:
 
     def kill_all_sessions(self):
         """終止所有會話"""
-        for name in self.sessions.keys():
+        for name in self.sessions:
             self.kill_session(name)
 
     def restart_session(self, name: str) -> bool:
-        """
-        重啟指定會話
-
-        Args:
-            name: 會話名稱
-
-        Returns:
-            bool: 是否成功
-        """
+        """重啟指定會話"""
         config = self.sessions.get(name)
         bridge = self.bridges.get(name)
 

@@ -131,13 +131,11 @@ if [ -z "$LAST_MESSAGE" ]; then
     exit 0
 fi
 
-# 格式化訊息
-SESSION_HEADER="📍 *${TELEGRAM_SESSION_NAME}*"
-FORMATTED_MESSAGE="${SESSION_HEADER}
+# 格式化並發送到 Telegram
+FORMATTED_MESSAGE="📍 *${TELEGRAM_SESSION_NAME}*
 
 ${LAST_MESSAGE}"
 
-# 發送到 Telegram
 log_debug "Sending to Telegram..."
 if $PYTHON "$SCRIPT_DIR/send_telegram_notification.py" "$TELEGRAM_SESSION_NAME" "$FORMATTED_MESSAGE"; then
     log_debug "Successfully sent to Telegram"
@@ -145,5 +143,3 @@ else
     log_error "Failed to send to Telegram"
     exit 1
 fi
-
-exit 0

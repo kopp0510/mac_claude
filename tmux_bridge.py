@@ -4,8 +4,8 @@ Tmux 橋接管理模組
 管理 tmux 會話，處理輸入注入和輸出監控
 """
 
+import json
 import os
-import stat
 import subprocess
 import time
 import logging
@@ -35,53 +35,24 @@ class TmuxBridge:
     def check_tmux_installed(self) -> bool:
         """檢查 tmux 是否已安裝"""
         try:
-            result = subprocess.run(
-                ['which', 'tmux'],
-                capture_output=True,
-                text=True
-            )
-            return result.returncode == 0
-        except Exception as e:
-            logger.error(f"檢查 tmux 安裝失敗: {e}")
+            return subprocess.run(
+                ['which', 'tmux'], capture_output=True, text=True
+            ).returncode == 0
+        except Exception:
             return False
 
     def session_exists(self) -> bool:
         """檢查 tmux 會話是否存在"""
         try:
-            result = subprocess.run(
+            return subprocess.run(
                 ['tmux', 'has-session', '-t', self.session_name],
-                capture_output=True,
-                text=True
-            )
-            return result.returncode == 0
-        except Exception as e:
-            logger.error(f"檢查會話存在失敗: {e}")
-            return False
-
-    def _set_secure_file_permissions(self, file_path: str) -> bool:
-        """
-        設置安全的文件權限
-
-        Args:
-            file_path: 文件路徑
-
-        Returns:
-            bool: 是否成功
-        """
-        try:
-            os.chmod(file_path, config.tmux.LOG_FILE_MODE)
-            return True
-        except Exception as e:
-            logger.warning(f"設置文件權限失敗 {file_path}: {e}")
+                capture_output=True, text=True
+            ).returncode == 0
+        except Exception:
             return False
 
     def _create_log_file(self) -> bool:
-        """
-        創建日誌文件並設置安全權限
-
-        Returns:
-            bool: 是否成功
-        """
+        """創建日誌文件並設置安全權限"""
         try:
             # 確保目錄存在
             log_dir = os.path.dirname(self.log_file)
@@ -92,11 +63,9 @@ class TmuxBridge:
             if os.path.exists(self.log_file):
                 os.remove(self.log_file)
 
-            # 創建新文件
+            # 創建新文件並設置安全權限
             Path(self.log_file).touch()
-
-            # 設置安全權限
-            self._set_secure_file_permissions(self.log_file)
+            os.chmod(self.log_file, config.tmux.LOG_FILE_MODE)
 
             return True
         except Exception as e:
@@ -162,9 +131,6 @@ class TmuxBridge:
 
             return True
 
-        except subprocess.CalledProcessError as e:
-            logger.error(f"創建 tmux 會話失敗: {e}")
-            return False
         except Exception as e:
             logger.error(f"創建會話時發生錯誤: {e}")
             return False
@@ -207,7 +173,6 @@ class TmuxBridge:
             }]
 
             # 寫入 .claude/settings.local.json
-            import json
             config_dir = Path(work_dir) / '.claude'
             config_dir.mkdir(exist_ok=True)
 
@@ -239,83 +204,58 @@ class TmuxBridge:
             logger.warning(f"配置 hooks 失敗: {e}")
             return False
 
-    def send_command(self, command: str) -> bool:
+    def _run_tmux(self, args: list, error_msg: str) -> bool:
         """
-        發送命令到 tmux 會話
+        執行 tmux 命令的通用輔助方法
 
         Args:
-            command: 要發送的命令
+            args: tmux 命令參數列表
+            error_msg: 失敗時的日誌訊息前綴
 
         Returns:
             bool: 是否成功
         """
+        try:
+            result = subprocess.run(
+                ['tmux'] + args,
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                logger.error(f"{error_msg}: {result.stderr}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"{error_msg}: {e}")
+            return False
+
+    def send_command(self, command: str) -> bool:
+        """發送命令到 tmux 會話（自動按 Enter）"""
         if not self.session_exists():
             logger.error(f"tmux 會話 '{self.session_name}' 不存在")
             return False
 
-        try:
-            # 使用 send-keys 發送命令
-            # 使用 -l 來發送字面文字，避免特殊字元被解釋
-            result = subprocess.run([
-                'tmux', 'send-keys', '-t', self.session_name, '-l',
-                command
-            ], capture_output=True, text=True)
-
-            if result.returncode != 0:
-                logger.error(f"發送命令失敗: {result.stderr}")
-                return False
-
-            # 然後發送 Enter 鍵
-            result = subprocess.run([
-                'tmux', 'send-keys', '-t', self.session_name,
-                'Enter'
-            ], capture_output=True, text=True)
-
-            if result.returncode != 0:
-                logger.error(f"發送 Enter 失敗: {result.stderr}")
-                return False
-
-            return True
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"發送命令失敗: {e}")
+        # 使用 -l 發送字面文字，避免特殊字元被解釋
+        if not self._run_tmux(
+            ['send-keys', '-t', self.session_name, '-l', command],
+            "發送命令失敗"
+        ):
             return False
-        except Exception as e:
-            logger.error(f"發送命令時發生錯誤: {e}")
-            return False
+
+        return self._run_tmux(
+            ['send-keys', '-t', self.session_name, 'Enter'],
+            "發送 Enter 失敗"
+        )
 
     def send_text(self, text: str) -> bool:
-        """
-        發送文字到 tmux 會話（不自動按 Enter）
-
-        Args:
-            text: 要發送的文字
-
-        Returns:
-            bool: 是否成功
-        """
+        """發送文字到 tmux 會話（不自動按 Enter）"""
         if not self.session_exists():
             logger.error(f"tmux 會話 '{self.session_name}' 不存在")
             return False
 
-        try:
-            result = subprocess.run([
-                'tmux', 'send-keys', '-t', self.session_name,
-                '-l', text
-            ], capture_output=True, text=True)
-
-            if result.returncode != 0:
-                logger.error(f"發送文字失敗: {result.stderr}")
-                return False
-
-            return True
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"發送文字失敗: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"發送文字時發生錯誤: {e}")
-            return False
+        return self._run_tmux(
+            ['send-keys', '-t', self.session_name, '-l', text],
+            "發送文字失敗"
+        )
 
     def read_new_output(self) -> str:
         """
@@ -379,31 +319,22 @@ class TmuxBridge:
         if not self.session_exists():
             return True
 
-        try:
-            result = subprocess.run(
-                ['tmux', 'kill-session', '-t', self.session_name],
-                capture_output=True,
-                text=True
-            )
-
-            if result.returncode != 0:
-                logger.error(f"終止會話失敗: {result.stderr}")
-                return False
-
-            logger.info(f"tmux 會話 '{self.session_name}' 已終止")
-
-            # 安全地清理日誌文件
-            if os.path.exists(self.log_file):
-                try:
-                    os.remove(self.log_file)
-                except Exception as e:
-                    logger.warning(f"清理日誌文件失敗: {e}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"終止會話失敗: {e}")
+        if not self._run_tmux(
+            ['kill-session', '-t', self.session_name],
+            "終止會話失敗"
+        ):
             return False
+
+        logger.info(f"tmux 會話 '{self.session_name}' 已終止")
+
+        # 安全地清理日誌文件
+        if os.path.exists(self.log_file):
+            try:
+                os.remove(self.log_file)
+            except Exception as e:
+                logger.warning(f"清理日誌文件失敗: {e}")
+
+        return True
 
     def get_status(self) -> Dict[str, Any]:
         """

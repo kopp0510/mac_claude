@@ -5,7 +5,7 @@ Message Router - 訊息路由器
 """
 
 import re
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 
 class MessageRouter:
