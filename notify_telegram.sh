@@ -39,20 +39,14 @@ log_error() {
 log_debug "Hook triggered"
 log_debug "Input length: ${#INPUT}"
 
-# 載入 .env 環境變數
+# 載入 .env 環境變數（使用 grep + cut 正確處理值中的 = 號）
 if [ -f "$SCRIPT_DIR/.env" ]; then
-    while IFS='=' read -r key value; do
-        [[ -z "$key" || "$key" =~ ^# ]] && continue
-        value="${value%\"}"
-        value="${value#\"}"
-        value="${value%\'}"
-        value="${value#\'}"
-        case "$key" in
-            TELEGRAM_BOT_TOKEN|ALLOWED_USER_IDS)
-                export "$key=$value"
-                ;;
-        esac
-    done < "$SCRIPT_DIR/.env"
+    _token=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$SCRIPT_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
+    [ -n "$_token" ] && export TELEGRAM_BOT_TOKEN="$_token"
+
+    _user_ids=$(grep -E '^ALLOWED_USER_IDS=' "$SCRIPT_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
+    [ -n "$_user_ids" ] && export ALLOWED_USER_IDS="$_user_ids"
+    unset _token _user_ids
 fi
 
 # 驗證必要變數

@@ -1,3 +1,5 @@
+**繁體中文** | [English](README.en.md)
+
 # Claude Code Telegram 多會話橋接
 
 通過 Telegram 與多個正在運行的 Claude Code 實例進行雙向互動。
@@ -217,7 +219,7 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 **變數說明：**
 - `TELEGRAM_BOT_TOKEN` - 必填，從 BotFather 獲取
-- `ALLOWED_USER_IDS` - 可選，留空則允許所有用戶
+- `ALLOWED_USER_IDS` - 必填，逗號分隔的用戶 ID（留空將拒絕啟動）
 
 ## 工作原理
 
@@ -264,7 +266,7 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 ## 安全建議
 
-1. **限制用戶**：設置 `ALLOWED_USER_IDS` 只允許特定用戶
+1. **限制用戶**：`ALLOWED_USER_IDS` 為必填項，未設定時 Bot 拒絕啟動
 2. **保護配置**：`.env` 加入 `.gitignore`，不要提交敏感資訊
 3. **工作目錄權限**：確保專案目錄權限正確
 4. **網絡安全**：使用 Polling 模式，無需公開網址

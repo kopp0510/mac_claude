@@ -4,8 +4,9 @@ Message Router - 訊息路由器
 解析 #project 語法並路由到對應的會話
 """
 
-import re
 from typing import List, Tuple
+
+from config import patterns
 
 
 class MessageRouter:
@@ -35,8 +36,8 @@ class MessageRouter:
             sessions = self.session_manager.get_all_sessions()
             return [(name, actual_message) for name in sessions]
 
-        # 檢測 #session_name（允許下劃線）
-        match = re.match(r'^#([\w]+)\s+(.+)$', message, re.DOTALL)
+        # 檢測 #session_name（允許字母數字、底線、連字號）
+        match = patterns.MESSAGE_ROUTE.match(message)
         if match:
             session_name = match.group(1)
             actual_message = match.group(2).strip()

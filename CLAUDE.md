@@ -121,7 +121,7 @@ Telegram 用戶
 
 **config.py**
 - 集中配置管理，消除魔數
-- 4 個配置 dataclass：`TelegramConfig`、`TmuxConfig`、`QueueConfig`、`SecurityConfig`
+- 5 個配置 dataclass：`TelegramConfig`、`MonitorConfig`、`TmuxConfig`、`QueueConfig`、`SecurityConfig`
 - 全域實例 `config` 和預編譯正則 `patterns`（`CompiledPatterns` 類）
 - 從環境變數讀取 `bot_token`、`allowed_user_ids`、`sessions_config_file`
 
@@ -138,8 +138,7 @@ Telegram 用戶
 - 路由語法：`#session_name 訊息` 或 `#all 訊息`
 - **無預設會話**：沒有 `#` 前綴的訊息會返回錯誤並顯示可用會話列表
 - 無效路由返回 `[('__error__', message)]`
-- 正則表達式模式：`r'^#([\w]+)\s+(.+)$'`（inline 定義），允許會話名稱包含底線
-- **注意**：config.py 中有預編譯版本 `MESSAGE_ROUTE = r'^#([\w\-]+)\s+(.+)$'`（含連字號），但目前未被 MessageRouter 引用
+- 使用 `config.py` 中預編譯的 `patterns.MESSAGE_ROUTE`（`r'^#([\w\-]+)\s+(.+)$'`），允許會話名稱包含底線和連字號
 
 **SessionManager (session_manager.py)**
 - 將會話名稱映射到 SessionConfig (name, path, tmux_session, log_file)
@@ -203,7 +202,7 @@ sessions:
 
 ```env
 TELEGRAM_BOT_TOKEN=...       # 從 @BotFather 獲取
-ALLOWED_USER_IDS=123,456     # 逗號分隔，空白 = 允許所有人
+ALLOWED_USER_IDS=123,456     # 逗號分隔，必填（空白將拒絕啟動）
 SESSIONS_CONFIG_FILE=sessions.yaml  # 可選，預設為 sessions.yaml
 ```
 
@@ -336,7 +335,7 @@ echo '{"transcript_path": "/path/to/transcript.json"}' | ./notify_telegram.sh
 - 需要 Python 3.7+（asyncio 支援）
 - Long Polling 模式需要持續的網路連接
 - 每個會話需要唯一的 tmux 會話名稱
-- 會話名稱應符合 `[\w]+` 模式（字母數字 + 底線）
+- 會話名稱應符合 `[\w\-]+` 模式（字母數字 + 底線 + 連字號）
 
 ## 測試流程
 
@@ -356,13 +355,16 @@ echo '{"transcript_path": "/path/to/transcript.json"}' | ./notify_telegram.sh
 
 ```bash
 pytest tests/ -v
-# 應該 37 個測試全部通過
+# 應該 22 個測試全部通過
 ```
 
 ## 安全注意事項
 
-- ALLOWED_USER_IDS 提供基本存取控制
+- ALLOWED_USER_IDS 為必填項，未設定時 Bot 拒絕啟動
 - .env 和 sessions.yaml 在 .gitignore 中
 - 無 webhook 模式意味著沒有公開 URL 暴露
 - tmux 會話以當前用戶權限運行
 - 日誌文件權限設為 0o600（僅擁有者可讀寫，由 TmuxBridge 設定）
+- shell 注入防護：pipe-pane 路徑和 hook command 使用 `shlex.quote()` 跳脫
+- 訊息速率限制：每用戶每 5 秒最多 3 則訊息
+- 依賴版本鎖定為精確版本（防止供應鏈攻擊）

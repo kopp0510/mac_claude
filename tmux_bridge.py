@@ -6,6 +6,7 @@ Tmux 橋接管理模組
 
 import json
 import os
+import shlex
 import subprocess
 import time
 import logging
@@ -111,7 +112,7 @@ class TmuxBridge:
             # 啟動日誌記錄
             result = subprocess.run([
                 'tmux', 'pipe-pane', '-t', self.session_name,
-                '-o', f'cat >> {self.log_file}'
+                '-o', f'cat >> {shlex.quote(self.log_file)}'
             ], capture_output=True, text=True)
 
             if result.returncode != 0:
@@ -163,7 +164,7 @@ class TmuxBridge:
             # hooks 必須寫入 settings.local.json（不是 config.json）
             # 格式：hooks.Stop[].hooks[] — 需要內層 hooks 陣列包裝
             # 環境變數透過 command 前綴傳遞
-            hook_command = f"TELEGRAM_SESSION_NAME={session_name} {hook_script}"
+            hook_command = f"TELEGRAM_SESSION_NAME={shlex.quote(session_name)} {shlex.quote(str(hook_script))}"
             stop_hooks = [{
                 "hooks": [{
                     "type": "command",

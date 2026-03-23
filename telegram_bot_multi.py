@@ -18,6 +18,7 @@ from typing import Optional
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
+from collections import defaultdict
 from session_manager import SessionManager
 from message_router import MessageRouter
 from config import config as app_config
@@ -83,6 +84,23 @@ def check_user_permission(update: Update) -> bool:
         return True
     user_id = str(update.effective_user.id)
     return user_id in ALLOWED_USER_IDS
+
+
+# 速率限制：每用戶每 5 秒最多 3 則訊息
+RATE_LIMIT_WINDOW = 5
+RATE_LIMIT_MAX = 3
+_rate_limit_store: dict = defaultdict(list)
+
+
+def check_rate_limit(user_id: int) -> bool:
+    """檢查用戶是否超過速率限制"""
+    now = time.time()
+    timestamps = _rate_limit_store[user_id]
+    _rate_limit_store[user_id] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
+        return False
+    _rate_limit_store[user_id].append(now)
+    return True
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,6 +220,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理用戶訊息"""
     if not check_user_permission(update):
         await update.message.reply_text("❌ 未授權的用戶")
+        return
+
+    if not check_rate_limit(update.effective_user.id):
+        await update.message.reply_text("⏳ 發送過於頻繁，請稍後再試")
         return
 
     bot_state.telegram_chat_id = update.effective_chat.id
@@ -412,6 +434,10 @@ def main():
     """主程式"""
     if not TELEGRAM_BOT_TOKEN:
         logger.error("❌ 請設置 TELEGRAM_BOT_TOKEN 環境變數")
+        sys.exit(1)
+
+    if not ALLOWED_USER_IDS:
+        logger.critical("❌ ALLOWED_USER_IDS 未設定，拒絕啟動（安全防護：防止任何人控制 bot）")
         sys.exit(1)
 
     # 設置橋接
