@@ -380,7 +380,7 @@ class TelegramConfig:
 4. **檢查 Telegram Bot Token**：確認 .env 中的 TELEGRAM_BOT_TOKEN 正確
 5. **查看 Claude 日誌**：連接到 tmux 會話查看 hook 是否有錯誤訊息
    ```bash
-   tmux attach -t claude-session_name
+   tmux attach -t <tmux_session_name>  # tmux 名稱見 sessions.yaml 的 tmux 欄位
    ```
 6. **備用方案**：如果 hook 失敗，OutputMonitor 仍會輪詢並發送（延遲較高）
 7. 使用 `/buffer #session` 查看原始緩衝輸出
@@ -467,4 +467,4 @@ class TelegramConfig:
 - .env 和 sessions.yaml 在 .gitignore 中
 - 無 webhook 模式意味著沒有公開 URL 暴露
 - tmux 會話以當前用戶權限運行
-- /tmp 中的日誌文件權限設為 0o600（僅擁有者可讀寫，由 TmuxBridge 設定）
+- 日誌文件權限設為 0o600（僅擁有者可讀寫，由 TmuxBridge 設定）

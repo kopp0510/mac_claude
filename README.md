@@ -176,8 +176,11 @@ Do you want to proceed with editing these 3 files?
 你可以隨時 attach 到 tmux 會話直接操作：
 
 ```bash
-# 連接到指定會話
-tmux attach -t claude-rental
+# 查看所有會話
+tmux ls
+
+# 連接到指定會話（tmux 名稱見 sessions.yaml 配置）
+tmux attach -t <tmux_session_name>
 
 # 退出但不終止（按鍵）
 Ctrl+B, 然後按 D
@@ -199,15 +202,15 @@ sessions:
 ```yaml
 sessions:
   - name: rental
-    path: /Users/danlio/project/rental-management
+    path: /path/to/rental-management
     tmux: claude-rental
 
   - name: api
-    path: /Users/danlio/project/api-server
+    path: /path/to/api-server
     tmux: claude-api
 
   - name: docs
-    path: /Users/danlio/project/documentation
+    path: /path/to/documentation
     # tmux 會話名稱會自動設為 claude-docs
 ```
 ### .env 配置

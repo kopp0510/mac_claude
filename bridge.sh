@@ -52,6 +52,12 @@ do_validate() {
 
     local errors=0
 
+    # 優先使用 venv 的 Python（有依賴）
+    local PYTHON="python3"
+    if [ -x "$VENV_DIR/bin/python3" ]; then
+        PYTHON="$VENV_DIR/bin/python3"
+    fi
+
     # 1. .env 存在
     if [ -f "$SCRIPT_DIR/.env" ]; then
         info ".env 文件存在"
@@ -76,7 +82,7 @@ do_validate() {
 
         # 檢查是否有配置的會話
         local session_count
-        session_count=$(python3 -c "
+        session_count=$($PYTHON -c "
 import yaml, sys
 try:
     with open('$SCRIPT_DIR/sessions.yaml') as f:
@@ -96,7 +102,8 @@ except Exception as e:
         fi
 
         # 檢查每個會話路徑是否存在
-        python3 -c "
+        local path_results
+        path_results=$($PYTHON -c "
 import yaml
 with open('$SCRIPT_DIR/sessions.yaml') as f:
     c = yaml.safe_load(f)
@@ -108,14 +115,16 @@ for s in (c.get('sessions', []) if c else []):
         print(f'OK:{name}:{path}')
     else:
         print(f'FAIL:{name}:{path}')
-" 2>/dev/null | while IFS=: read -r status name path; do
+" 2>/dev/null)
+
+        while IFS=: read -r status name path; do
             if [ "$status" = "OK" ]; then
                 info "會話 #${name} 路徑存在: ${path}"
             else
                 error "會話 #${name} 路徑不存在: ${path}"
                 errors=$((errors + 1))
             fi
-        done
+        done <<< "$path_results"
     else
         error "sessions.yaml 不存在（請執行: cp sessions.yaml.example sessions.yaml）"
         errors=$((errors + 1))
@@ -284,18 +293,42 @@ do_stop() {
     info "Bot 已停止"
 }
 
+# === 獲取配置的 tmux 會話名稱列表 ===
+get_configured_tmux_sessions() {
+    local PYTHON="python3"
+    if [ -x "$VENV_DIR/bin/python3" ]; then
+        PYTHON="$VENV_DIR/bin/python3"
+    fi
+
+    if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
+        $PYTHON -c "
+import yaml
+with open('$SCRIPT_DIR/sessions.yaml') as f:
+    c = yaml.safe_load(f)
+for s in (c.get('sessions', []) if c else []):
+    name = s.get('name', '')
+    tmux = s.get('tmux', f'claude-{name}')
+    print(tmux)
+" 2>/dev/null
+    fi
+}
+
 # === 清理 tmux 會話 ===
 cleanup_tmux() {
-    local sessions
-    sessions=$(tmux ls 2>/dev/null | grep "^claude-" | cut -d: -f1 || true)
+    local configured
+    configured=$(get_configured_tmux_sessions)
 
-    if [ -n "$sessions" ]; then
-        step "清理 tmux 會話..."
-        while IFS= read -r session; do
+    if [ -z "$configured" ]; then
+        return
+    fi
+
+    step "清理 tmux 會話..."
+    while IFS= read -r session; do
+        if tmux has-session -t "$session" 2>/dev/null; then
             tmux kill-session -t "$session" 2>/dev/null && \
                 info "已終止: ${session}" || true
-        done <<< "$sessions"
-    fi
+        fi
+    done <<< "$configured"
 }
 
 # === 重啟 ===
@@ -332,14 +365,20 @@ do_status() {
 
     # tmux 會話狀態
     echo "🖥️  tmux 會話:"
-    local sessions
-    sessions=$(tmux ls 2>/dev/null | grep "^claude-" || true)
-    if [ -n "$sessions" ]; then
+    local configured has_active=false
+    configured=$(get_configured_tmux_sessions)
+    if [ -n "$configured" ]; then
         while IFS= read -r session; do
-            echo "   ✅ ${session}"
-        done <<< "$sessions"
-    else
-        echo "   （無活躍的 Claude 會話）"
+            if tmux has-session -t "$session" 2>/dev/null; then
+                echo "   ✅ ${session}（運行中）"
+                has_active=true
+            else
+                echo "   ❌ ${session}（未啟動）"
+            fi
+        done <<< "$configured"
+    fi
+    if [ "$has_active" = false ]; then
+        echo "   （無活躍的會話）"
     fi
 
     echo ""
