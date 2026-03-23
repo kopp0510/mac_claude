@@ -2,9 +2,6 @@
 .env
 sessions.yaml
 
-# Claude Code 生成的文檔
-CLAUDE.md
-
 # Python
 __pycache__/
 *.py[cod]

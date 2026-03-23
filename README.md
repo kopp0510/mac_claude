@@ -6,8 +6,8 @@
 
 - 🔄 **雙向通訊**：Claude Code 的輸出即時推送到 Telegram，Telegram 的訊息也能傳回 Claude Code
 - 🔀 **多會話並行**：同時管理多個 Claude Code 實例，並行執行任務
-- 🏷️ **來源標記**：所有回覆都標記來源 `[@project]`，清楚辨識
-- 📮 **智能路由**：使用 `@project` 語法指定目標，或 `@all` 廣播給所有會話
+- 🏷️ **來源標記**：所有回覆都標記來源 `[#project]`，清楚辨識
+- 📮 **智能路由**：使用 `#project` 語法指定目標，或 `#all` 廣播給所有會話
 - 🖥️ **同時操作**：可以同時在終端和 Telegram 與 Claude Code 互動
 - 🤖 **智能過濾**：自動識別最終回覆，過濾處理訊息和 ANSI 控制碼
 - 🎯 **互動式按鈕**：確認提示自動轉換為 Inline Keyboard 按鈕
@@ -38,7 +38,7 @@
     └────┬────┘    └────┬────┘    └────┬────┘
          │              │              │
          ▼              ▼              ▼
-    [@rental]       [@api]         [@docs]
+    [#rental]       [#api]         [#docs]
          │              │              │
          └──────────────┼──────────────┘
                         ▼
@@ -100,6 +100,10 @@ sessions:
 ### 5. 啟動
 
 ```bash
+# 推薦：使用啟動腳本（自動處理虛擬環境、依賴、驗證）
+./start_bridge.sh
+
+# 手動啟動
 python3 telegram_bot_multi.py
 ```
 
@@ -113,18 +117,19 @@ python3 telegram_bot_multi.py
 #rental 查詢當前路徑          → 發送給 rental 會話
 #api 執行測試                → 發送給 api 會話
 #all 生成文檔                → 發送給所有會話
-直接發送訊息                  → 發送給預設會話（第一個）
 ```
+
+**注意**：必須使用 `#` 前綴指定目標會話，沒有前綴的訊息會返回錯誤並顯示可用會話列表。
 
 ### 回覆格式
 
 所有回覆都會標記來源：
 
 ```
-[@rental]
+[#rental]
 /Users/你的用戶名/project/rental-management
 
-[@api]
+[#api]
 測試完成！所有測試通過。
 ```
 
@@ -143,7 +148,7 @@ python3 telegram_bot_multi.py
 當 Claude 詢問確認時，會自動顯示按鈕：
 
 ```
-[@rental]
+[#rental]
 Do you want to proceed with editing these 3 files?
   1. Yes, proceed with edits
   2. No, cancel
@@ -203,20 +208,28 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 ## 工作原理
 
-### 輸出監控
+### 即時通知（Hook 驅動 — 主要機制）
+
+1. Claude Code 完成回應時觸發 Stop hook
+2. `notify_telegram.sh` 解析 `transcript.json` 提取 assistant 訊息
+3. `send_telegram_notification.py` 透過 Telegram Bot API 即時推送
+4. 延遲 < 1 秒，事件驅動
+
+### 輸出監控（備用機制）
 
 1. 每個會話的 tmux 將輸出記錄到獨立日誌
 2. `MultiSessionMonitor` 同時監控所有會話
 3. 檢測輸出完成（閒置 8 秒）
 4. 清理 ANSI 碼、過濾處理訊息
 5. 格式化並推送到 Telegram，附上來源標記
+6. 主要用於 `/buffer` 命令查詢歷史輸出
 
 ### 訊息路由
 
-1. `MessageRouter` 解析 `@project` 語法
+1. `MessageRouter` 解析 `#project` 語法
 2. `SessionManager` 將訊息路由到對應會話
 3. 使用 `tmux send-keys` 注入到 Claude Code
-4. 支援 `@all` 廣播給所有會話
+4. 支援 `#all` 廣播給所有會話
 
 ### 並行執行
 
@@ -227,8 +240,7 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 ## 文件說明
 
 **主程式：**
-- `telegram_bot_multi.py` - 多會話 Telegram Bot（推薦）
-- `telegram_bot_single.py` - 單會話版本（備份）
+- `telegram_bot_multi.py` - Telegram Bot 主程式
 
 **核心模組：**
 - `session_manager.py` - 會話管理器
@@ -236,8 +248,14 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 - `multi_session_monitor.py` - 多會話監控器
 - `output_monitor.py` - 輸出監控和過濾
 - `tmux_bridge.py` - Tmux 橋接模組
+- `config.py` - 集中配置管理
 
-**配置文件：**
+**Hook 通知：**
+- `notify_telegram.sh` - Claude Code Stop hook 腳本
+- `send_telegram_notification.py` - Telegram API 發送器
+
+**啟動與配置：**
+- `start_bridge.sh` - 一鍵啟動（環境檢查、虛擬環境、依賴安裝）
 - `sessions.yaml` - 會話配置
 - `.env` - 環境變數
 - `requirements.txt` - Python 依賴
@@ -294,7 +312,24 @@ cat .env
 cat sessions.yaml
 
 # 檢查 Python 模組
-python3 -c "import telegram; import yaml"
+python3 -c "import telegram; import yaml; import requests"
+```
+
+### Hook 通知未觸發
+
+```bash
+# 檢查 hook 配置是否存在
+cat /path/to/project/.claude/config.json
+
+# 檢查 hook 腳本權限
+ls -la notify_telegram.sh send_telegram_notification.py
+
+# 手動測試 hook
+export TELEGRAM_SESSION_NAME=test
+echo '{"transcript_path": "/path/to/transcript.json"}' | ./notify_telegram.sh
+
+# 查看 hook 除錯日誌
+cat ~/.claude_bridge/logs/hook_debug_*.log
 ```
 
 ### 訊息未送達
@@ -321,9 +356,6 @@ A: 按 `Ctrl+C` 停止 Bot，然後：
 tmux kill-session -t claude-rental
 tmux kill-session -t claude-api
 ```
-
-**Q: 單會話和多會話版本的差異？**
-A: 多會話版本可以管理一個或多個會話，更靈活，推薦使用。
 
 **Q: 如何添加新專案？**
 A: 在 `sessions.yaml` 添加新配置，然後使用 `/reload` 命令熱重載配置，無需重啟 Bot。
