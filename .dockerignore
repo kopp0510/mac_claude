@@ -1,0 +1,9 @@
+venv/
+.env
+sessions.yaml
+__pycache__/
+*.pyc
+.DS_Store
+.git/
+*.log
+.claude/
