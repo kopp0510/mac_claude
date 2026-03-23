@@ -99,31 +99,11 @@ sessions:
 
 ### 5. 啟動
 
-**方式 A：本機直接運行**
 ```bash
 ./bridge.sh start
 ./bridge.sh status
 ./bridge.sh stop
 ```
-
-**方式 B：Docker 運行**
-```bash
-# 1. 編輯 docker-compose.yml 掛載你的專案目錄
-# 2. sessions.yaml 中的 path 須與容器內路徑對齊
-
-# 建構並啟動
-docker compose up -d --build
-
-# 查看日誌
-docker compose logs -f
-
-# 停止
-docker compose down
-```
-
-**Docker 認證方式：**
-- **API Key**：在 `.env` 加 `ANTHROPIC_API_KEY=sk-ant-...`
-- **Max/Pro OAuth**：先在本機執行 `claude` 登入一次，Docker 會掛載 `~/.claude/` 讀取認證
 
 ## 使用方法
 

@@ -22,11 +22,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # 手動：前台執行（開發用）
 python3 telegram_bot_multi.py
-
-# Docker：容器化運行
-docker compose up -d --build    # 建構並啟動
-docker compose logs -f          # 查看日誌
-docker compose down             # 停止
 ```
 
 ### 依賴管理
