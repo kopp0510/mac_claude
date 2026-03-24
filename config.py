@@ -45,8 +45,11 @@ class MonitorConfig:
 class TmuxConfig:
     """Tmux 相關配置"""
     # 日誌設定
-    LOG_DIR: str = os.path.expanduser("~/.claude_bridge/logs")  # 日誌目錄
+    LOG_DIR: str = os.path.expanduser("~/.ai_bridge/logs")  # 日誌目錄
     LOG_FILE_MODE: int = 0o600      # 日誌文件權限（只有擁有者可讀寫）
+    LOG_MAX_SIZE: int = 10 * 1024 * 1024   # 10MB 觸發截斷
+    LOG_KEEP_SIZE: int = 5 * 1024 * 1024   # 截斷後保留 5MB
+    LOG_CHECK_INTERVAL: int = 1800         # 檢查間隔 30 分鐘
 
     # 會話設定
     SESSION_INIT_DELAY: float = 2.0 # 會話初始化等待時間（秒）

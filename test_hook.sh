@@ -9,7 +9,7 @@ echo "🧪 測試 Hook 整合..."
 echo ""
 
 # 1. 創建測試 transcript
-TEST_DIR="/tmp/test_claude_hook"
+TEST_DIR="/tmp/test_ai_hook"
 mkdir -p "$TEST_DIR"
 
 TEST_TRANSCRIPT="$TEST_DIR/test_transcript.json"

@@ -4,7 +4,6 @@ Tmux 橋接管理模組
 管理 tmux 會話，處理輸入注入和輸出監控
 """
 
-import json
 import os
 import shlex
 import subprocess
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from config import config
+from cli_provider import CliProvider, ClaudeProvider
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +21,20 @@ logger = logging.getLogger(__name__)
 class TmuxBridge:
     """Tmux 橋接管理器"""
 
-    def __init__(self, session_name: str = "claude", log_file: Optional[str] = None):
+    def __init__(self, session_name: str = "claude", log_file: Optional[str] = None,
+                 cli_provider: Optional[CliProvider] = None):
         """
         初始化 Tmux 橋接管理器
 
         Args:
             session_name: tmux 會話名稱
-            log_file: 日誌文件路徑（可選，預設為 /tmp/claude_{session_name}.log）
+            log_file: 日誌文件路徑
+            cli_provider: CLI 提供者（預設為 ClaudeProvider）
         """
         self.session_name = session_name
-        self.log_file = log_file or f"{config.tmux.LOG_DIR}/claude_{session_name}.log"
+        self.log_file = log_file or f"{config.tmux.LOG_DIR}/session_{session_name}.log"
         self.last_read_position = 0
+        self.cli_provider = cli_provider or ClaudeProvider()
 
     def check_tmux_installed(self) -> bool:
         """檢查 tmux 是否已安裝"""
@@ -75,14 +78,14 @@ class TmuxBridge:
 
     def create_session(self, work_dir: Optional[str] = None,
                        session_alias: Optional[str] = None,
-                       claude_args: str = "") -> bool:
+                       cli_args: str = "") -> bool:
         """
-        創建 tmux 會話並啟動 Claude Code
+        創建 tmux 會話並啟動 CLI
 
         Args:
             work_dir: 工作目錄
             session_alias: 會話別名（用於 hook 通知）
-            claude_args: claude 啟動參數（如 --model sonnet）
+            cli_args: CLI 啟動參數（如 --model sonnet）
 
         Returns:
             bool: 是否成功
@@ -120,15 +123,19 @@ class TmuxBridge:
             if result.returncode != 0:
                 logger.warning(f"啟動日誌記錄失敗: {result.stderr}")
 
-            # 配置 Claude Code hooks
-            self._configure_claude_hooks(work_dir, session_alias or self.session_name)
+            # 配置 CLI hooks
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            hook_script = os.path.join(script_dir, 'notify_telegram.sh')
+            self.cli_provider.configure_hooks(
+                work_dir, session_alias or self.session_name, hook_script
+            )
 
             # 等待會話初始化
             time.sleep(config.tmux.SESSION_INIT_DELAY)
 
-            # 在會話中啟動 claude
-            claude_cmd = f"claude {claude_args}".strip() if claude_args else "claude"
-            self.send_command(claude_cmd)
+            # 在會話中啟動 CLI
+            cli_cmd = self.cli_provider.build_launch_command(cli_args)
+            self.send_command(cli_cmd)
 
             logger.info(f"tmux 會話 '{self.session_name}' 已創建")
             logger.info(f"日誌文件: {self.log_file}")
@@ -137,75 +144,6 @@ class TmuxBridge:
 
         except Exception as e:
             logger.error(f"創建會話時發生錯誤: {e}")
-            return False
-
-    def _configure_claude_hooks(self, work_dir: Optional[str],
-                                 session_name: str) -> bool:
-        """
-        配置 Claude Code hooks
-
-        Args:
-            work_dir: 工作目錄
-            session_name: 會話名稱（用於通知路由）
-
-        Returns:
-            bool: 是否成功
-        """
-        if not work_dir:
-            return False
-
-        try:
-            # 獲取專案根目錄的 notify_telegram.sh 路徑
-            script_dir = Path(__file__).parent.absolute()
-            hook_script = script_dir / 'notify_telegram.sh'
-
-            if not hook_script.exists():
-                logger.warning(f"Hook script not found: {hook_script}")
-                return False
-
-            # 設置 Stop hook（當 Claude 完成回應時觸發）
-            # hooks 必須寫入 settings.local.json（不是 config.json）
-            # 格式：hooks.Stop[].hooks[] — 需要內層 hooks 陣列包裝
-            # 環境變數透過 command 前綴傳遞
-            hook_command = f"TELEGRAM_SESSION_NAME={shlex.quote(session_name)} {shlex.quote(str(hook_script))}"
-            stop_hooks = [{
-                "hooks": [{
-                    "type": "command",
-                    "command": hook_command,
-                    "timeout": 30
-                }]
-            }]
-
-            # 寫入 .claude/settings.local.json
-            config_dir = Path(work_dir) / '.claude'
-            config_dir.mkdir(exist_ok=True)
-
-            settings_file = config_dir / 'settings.local.json'
-
-            # 讀取現有設定（保留 permissions 等）
-            existing_settings = {}
-            if settings_file.exists():
-                try:
-                    with open(settings_file, 'r', encoding='utf-8') as f:
-                        existing_settings = json.load(f)
-                except Exception as e:
-                    logger.warning(f"讀取現有設定失敗: {e}")
-
-            # 合併 hooks 配置（保留其他設定不動）
-            if 'hooks' not in existing_settings:
-                existing_settings['hooks'] = {}
-
-            existing_settings['hooks']['Stop'] = stop_hooks
-
-            # 寫入設定
-            with open(settings_file, 'w', encoding='utf-8') as f:
-                json.dump(existing_settings, f, indent=2, ensure_ascii=False)
-
-            logger.info(f"已配置 Claude Code hooks: {session_name}")
-            return True
-
-        except Exception as e:
-            logger.warning(f"配置 hooks 失敗: {e}")
             return False
 
     def _run_tmux(self, args: list, error_msg: str) -> bool:
@@ -245,10 +183,21 @@ class TmuxBridge:
         ):
             return False
 
-        return self._run_tmux(
+        if not self._run_tmux(
             ['send-keys', '-t', self.session_name, 'Enter'],
             "發送 Enter 失敗"
-        )
+        ):
+            return False
+
+        # Gemini CLI 的輸入框需要額外一次 Enter 才能送出
+        if self.cli_provider.extra_enter:
+            if not self._run_tmux(
+                ['send-keys', '-t', self.session_name, 'Enter'],
+                "發送額外 Enter 失敗"
+            ):
+                return False
+
+        return True
 
     def send_text(self, text: str) -> bool:
         """發送文字到 tmux 會話（不自動按 Enter）"""

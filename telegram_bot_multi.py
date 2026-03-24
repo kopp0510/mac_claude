@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Telegram Bot - Claude Code 多會話並行橋接
-支援同時管理多個 Claude Code 實例
-透過 Hook 機制即時接收 Claude 回應
+Telegram Bot - AI CLI 多會話並行橋接
+支援同時管理多個 AI CLI 實例（Claude Code、Gemini CLI）
+透過 Hook 機制即時接收 AI 回應
 """
 
 import os
@@ -12,6 +12,7 @@ import logging
 import queue
 import time
 import threading
+from pathlib import Path
 import yaml
 from dataclasses import dataclass, field
 from typing import Optional
@@ -113,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sessions_list = bot_state.message_router.format_session_list() if bot_state.message_router else "尚未初始化"
 
-    welcome_message = f"""🤖 Claude Code 多會話橋接 Bot
+    welcome_message = f"""🤖 AI CLI 多會話橋接 Bot
 
 {sessions_list}
 
@@ -142,8 +143,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{status_emoji} #{name}")
         lines.append(f"   路徑: {info['path']}")
         lines.append(f"   tmux: {info['tmux_session']}")
-        if info.get('claude_args'):
-            lines.append(f"   參數: {info['claude_args']}")
+        lines.append(f"   CLI: {info.get('cli_type', 'claude')}")
+        if info.get('cli_args'):
+            lines.append(f"   參數: {info['cli_args']}")
         lines.append(f"   狀態: {'運行中' if info['exists'] else '未啟動'}")
         lines.append(f"   通知: Hook 驅動\n")
 
@@ -335,9 +337,10 @@ def load_sessions_config():
             name = session['name']
             path = session['path']
             tmux = session.get('tmux')
-            claude_args = session.get('claude_args', '')
+            cli_type = session.get('cli_type', 'claude')
+            cli_args = session.get('cli_args', session.get('claude_args', ''))
 
-            session_manager.add_session(name, path, tmux, claude_args)
+            session_manager.add_session(name, path, tmux, cli_args, cli_type)
 
         logger.info(f"✅ 載入 {len(config['sessions'])} 個會話配置")
 
@@ -390,9 +393,10 @@ def reload_sessions_config():
             name = session['name']
             path = session['path']
             tmux = session.get('tmux')
-            claude_args = session.get('claude_args', '')
+            cli_type = session.get('cli_type', 'claude')
+            cli_args = session.get('cli_args', session.get('claude_args', ''))
 
-            new_manager.add_session(name, path, tmux, claude_args)
+            new_manager.add_session(name, path, tmux, cli_args, cli_type)
 
             # 新增的會話，創建 tmux 會話
             if name in added:
@@ -401,7 +405,7 @@ def reload_sessions_config():
                 if not bridge.session_exists():
                     bridge.create_session(work_dir=path,
                                           session_alias=name,
-                                          claude_args=claude_args)
+                                          cli_args=cli_args)
 
         # 更新全域狀態
         bot_state.update_session_manager(new_manager)
@@ -415,6 +419,26 @@ def reload_sessions_config():
     except Exception as e:
         logger.error(f"❌ 重載配置失敗: {e}")
         return False, f"重載失敗: {str(e)}", {}
+
+
+def log_rotation_worker():
+    """定時檢查日誌大小，超過閾值截斷保留最後部分"""
+    while True:
+        time.sleep(app_config.tmux.LOG_CHECK_INTERVAL)
+        try:
+            log_dir = Path(app_config.tmux.LOG_DIR)
+            if not log_dir.exists():
+                continue
+            for log_file in log_dir.glob("*.log"):
+                try:
+                    if log_file.stat().st_size > app_config.tmux.LOG_MAX_SIZE:
+                        data = log_file.read_bytes()[-app_config.tmux.LOG_KEEP_SIZE:]
+                        log_file.write_bytes(data)
+                        logger.info(f"日誌已截斷: {log_file.name}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 def setup_bridge():
@@ -432,6 +456,10 @@ def setup_bridge():
     # 啟動訊息佇列處理執行緒
     queue_thread = threading.Thread(target=message_queue_processor, daemon=True)
     queue_thread.start()
+
+    # 啟動日誌輪替執行緒
+    rotation_thread = threading.Thread(target=log_rotation_worker, daemon=True)
+    rotation_thread.start()
 
     logger.info("✅ 橋接設置完成（Hook 驅動通知）")
 

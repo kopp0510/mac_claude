@@ -77,8 +77,9 @@ class MessageRouter:
             lines.append(f"   路徑: {config.path}")
             lines.append(f"   tmux: {config.tmux_session}\n")
 
+        example_name = sessions[0]
         lines.append("\n💡 使用方式：")
-        lines.append("• #rental 你的訊息  → 發送給 rental 會話")
+        lines.append(f"• #{example_name} 你的訊息  → 發送給 {example_name} 會話")
         lines.append("• #all 你的訊息     → 發送給所有會話")
 
         return '\n'.join(lines)

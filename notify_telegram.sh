@@ -21,7 +21,7 @@ if [ -x "$SCRIPT_DIR/venv/bin/python3" ]; then
 fi
 
 # 日誌目錄
-LOG_DIR="${HOME}/.claude_bridge/logs"
+LOG_DIR="${HOME}/.ai_bridge/logs"
 mkdir -p "$LOG_DIR"
 
 # Debug logging
@@ -61,21 +61,28 @@ if [ -z "${TELEGRAM_SESSION_NAME:-}" ]; then
 fi
 
 # 從 stdin JSON 提取訊息
-# 優先使用 last_assistant_message（最簡單可靠）
-# 如果為空，fallback 到 transcript 解析
+# Claude: 使用 last_assistant_message
+# Gemini: 使用 prompt_response
+# Fallback: transcript 解析
 LAST_MESSAGE=$(echo "$INPUT" | $PYTHON -c "
 import sys, json
 
 try:
     data = json.load(sys.stdin)
 
-    # 方法 1：直接使用 last_assistant_message
+    # 方法 1：Claude — last_assistant_message
     msg = data.get('last_assistant_message', '')
     if msg and msg.strip():
         print(msg.strip())
         sys.exit(0)
 
-    # 方法 2：Fallback — 從 transcript 解析
+    # 方法 2：Gemini — prompt_response
+    msg = data.get('prompt_response', '')
+    if msg and msg.strip():
+        print(msg.strip())
+        sys.exit(0)
+
+    # 方法 3：Fallback — 從 transcript 解析
     transcript_path = data.get('transcript_path', '')
     if not transcript_path:
         sys.exit(0)
@@ -122,6 +129,10 @@ log_debug "Extracted message length: ${#LAST_MESSAGE}"
 
 if [ -z "$LAST_MESSAGE" ]; then
     log_debug "No message to send, exiting quietly"
+    # Gemini hooks 仍需要 stdout JSON
+    if [ "${TELEGRAM_CLI_TYPE:-}" = "gemini" ]; then
+        echo '{}'
+    fi
     exit 0
 fi
 
@@ -135,5 +146,14 @@ if $PYTHON "$SCRIPT_DIR/send_telegram_notification.py" "$TELEGRAM_SESSION_NAME" 
     log_debug "Successfully sent to Telegram"
 else
     log_error "Failed to send to Telegram"
+    # Gemini hooks 仍需要 stdout JSON，即使發送失敗
+    if [ "${TELEGRAM_CLI_TYPE:-}" = "gemini" ]; then
+        echo '{}'
+    fi
     exit 1
+fi
+
+# Gemini hooks 要求 stdout 必須是有效 JSON，否則會破壞解析
+if [ "${TELEGRAM_CLI_TYPE:-}" = "gemini" ]; then
+    echo '{}'
 fi

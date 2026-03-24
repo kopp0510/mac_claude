@@ -118,6 +118,21 @@ def send_to_chat(bot_token: str, chat_id: str, message: str) -> bool:
                 time.sleep(retry_after)
                 continue
 
+            if error_code == 400 and 'parse entities' in error_description.lower():
+                # Markdown 解析失敗，fallback 為純文字重發
+                logger.warning(f"Markdown 解析失敗，改用純文字重發")
+                payload_plain = dict(payload)
+                del payload_plain['parse_mode']
+                try:
+                    resp = requests.post(url, json=payload_plain, timeout=API_TIMEOUT)
+                    if resp.ok:
+                        logger.info(f"Successfully sent plain text message to chat {chat_id}")
+                        return True
+                    logger.error(f"Plain text fallback also failed: {resp.status_code}")
+                except Exception as e:
+                    logger.error(f"Plain text fallback error: {e}")
+                return False
+
             if error_code in [400, 401, 403, 404]:
                 # 不可重試的錯誤
                 logger.error(f"Non-retryable error ({error_code}): {error_description}")

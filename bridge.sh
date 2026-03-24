@@ -1,12 +1,12 @@
 #!/bin/bash
-# Claude Code Telegram Bridge - 統一管理工具
+# AI CLI Telegram Bridge - 統一管理工具
 # 用法: ./bridge.sh {start|stop|restart|status|logs|validate}
 
 set -euo pipefail
 
 # === 路徑常數 ===
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BRIDGE_DIR="${HOME}/.claude_bridge"
+BRIDGE_DIR="${HOME}/.ai_bridge"
 LOG_DIR="${BRIDGE_DIR}/logs"
 PID_FILE="${BRIDGE_DIR}/bridge.pid"
 BOT_LOG="${LOG_DIR}/bot.log"
@@ -45,19 +45,6 @@ is_running() {
     return 1
 }
 
-# === 虛擬環境管理 ===
-ensure_venv() {
-    if [ ! -d "$VENV_DIR" ]; then
-        step "創建虛擬環境..."
-        python3 -m venv "$VENV_DIR"
-    fi
-
-    if ! "$VENV_DIR/bin/python3" -c "import telegram; import yaml; import requests" 2>/dev/null; then
-        step "安裝 Python 依賴..."
-        "$VENV_DIR/bin/pip3" install -q -r "$SCRIPT_DIR/requirements.txt"
-    fi
-}
-
 # === 配置驗證 ===
 do_validate() {
     echo "🔍 驗證配置..."
@@ -65,9 +52,11 @@ do_validate() {
 
     local errors=0
 
-    # 確保 venv 和依賴就緒（驗證需要 PyYAML）
-    ensure_venv
-    local PYTHON="$VENV_DIR/bin/python3"
+    # 優先使用 venv 的 Python（有依賴）
+    local PYTHON="python3"
+    if [ -x "$VENV_DIR/bin/python3" ]; then
+        PYTHON="$VENV_DIR/bin/python3"
+    fi
 
     # 1. .env 存在
     if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -149,13 +138,31 @@ for s in (c.get('sessions', []) if c else []):
         errors=$((errors + 1))
     fi
 
-    # 4. claude CLI 已安裝
-    if command -v claude &>/dev/null; then
-        info "Claude CLI 已安裝"
-    else
-        error "Claude CLI 未安裝"
-        errors=$((errors + 1))
-    fi
+    # 4. CLI 已安裝（根據 sessions.yaml 中配置的 cli_type 動態檢查）
+    local cli_types
+    cli_types=$($PYTHON -c "
+import yaml, sys
+try:
+    with open('$SCRIPT_DIR/sessions.yaml') as f:
+        c = yaml.safe_load(f)
+    types = set()
+    for s in (c.get('sessions', []) if c else []):
+        types.add(s.get('cli_type', 'claude'))
+    for t in sorted(types):
+        print(t)
+except Exception:
+    print('claude')
+" 2>/dev/null)
+
+    while IFS= read -r cli_type; do
+        [ -z "$cli_type" ] && continue
+        if command -v "$cli_type" &>/dev/null; then
+            info "${cli_type} CLI 已安裝"
+        else
+            error "${cli_type} CLI 未安裝"
+            errors=$((errors + 1))
+        fi
+    done <<< "$cli_types"
 
     # 5. 腳本權限
     if [ -x "$SCRIPT_DIR/notify_telegram.sh" ]; then
@@ -171,8 +178,16 @@ for s in (c.get('sessions', []) if c else []):
     fi
 
     # 6. Python 依賴
-    info "虛擬環境就緒"
-    info "Python 依賴已安裝"
+    if [ -d "$VENV_DIR" ]; then
+        info "虛擬環境存在"
+        if "$VENV_DIR/bin/python3" -c "import telegram; import yaml; import requests" 2>/dev/null; then
+            info "Python 依賴已安裝"
+        else
+            warn "Python 依賴不完整（啟動時會自動安裝）"
+        fi
+    else
+        warn "虛擬環境不存在（啟動時會自動創建）"
+    fi
 
     # 7. 日誌目錄
     if [ -d "$LOG_DIR" ]; then
@@ -207,7 +222,27 @@ do_start() {
 
     echo ""
     step "初始化環境..."
+
+    # 遷移舊目錄（一次性）
+    if [ -d "$HOME/.claude_bridge" ] && [ ! -d "$HOME/.ai_bridge" ]; then
+        mv "$HOME/.claude_bridge" "$HOME/.ai_bridge"
+        info "已遷移 ~/.claude_bridge → ~/.ai_bridge"
+    fi
+
     init_dirs
+
+    # 確保虛擬環境存在
+    if [ ! -d "$VENV_DIR" ]; then
+        step "創建虛擬環境..."
+        python3 -m venv "$VENV_DIR"
+    fi
+
+    # 啟動虛擬環境並安裝依賴
+    source "$VENV_DIR/bin/activate"
+    if ! python3 -c "import telegram; import yaml; import requests" 2>/dev/null; then
+        step "安裝 Python 依賴..."
+        pip3 install -q -r "$SCRIPT_DIR/requirements.txt"
+    fi
 
     # 確保腳本有執行權限
     chmod +x "$SCRIPT_DIR/notify_telegram.sh" 2>/dev/null || true
@@ -280,21 +315,31 @@ do_stop() {
     # 清理 tmux 會話
     cleanup_tmux
 
+    # 清理日誌
+    step "清理日誌..."
+    find "$LOG_DIR" -name "*_*.log" -delete 2>/dev/null
+    find "$LOG_DIR" -name "hook_debug_*.log" -delete 2>/dev/null
+
     info "Bot 已停止"
 }
 
 # === 獲取配置的 tmux 會話名稱列表 ===
 get_configured_tmux_sessions() {
-    local PYTHON="$VENV_DIR/bin/python3"
+    local PYTHON="python3"
+    if [ -x "$VENV_DIR/bin/python3" ]; then
+        PYTHON="$VENV_DIR/bin/python3"
+    fi
 
-    if [ -f "$SCRIPT_DIR/sessions.yaml" ] && [ -x "$PYTHON" ]; then
+    if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
         $PYTHON -c "
 import yaml
 with open('$SCRIPT_DIR/sessions.yaml') as f:
     c = yaml.safe_load(f)
 for s in (c.get('sessions', []) if c else []):
     name = s.get('name', '')
-    tmux = s.get('tmux', f'claude-{name}')
+    cli_type = s.get('cli_type', 'claude')
+    prefix = 'gemini-' if cli_type == 'gemini' else 'claude-'
+    tmux = s.get('tmux', f'{prefix}{name}')
     print(tmux)
 " 2>/dev/null
     fi
@@ -329,7 +374,7 @@ do_restart() {
 
 # === 狀態 ===
 do_status() {
-    echo "📊 Claude Bridge 狀態"
+    echo "📊 AI Bridge 狀態"
     echo ""
 
     # Bot 進程狀態
@@ -402,21 +447,23 @@ do_logs() {
     else
         # 查看指定會話日誌
         session="${session#\#}" # 移除可能的 # 前綴
-        local session_log="${LOG_DIR}/claude_${session}.log"
-        if [ -f "$session_log" ]; then
+        # 動態查找會話日誌（支援不同 cli_type 前綴）
+        local session_log
+        session_log=$(ls "$LOG_DIR"/*_"${session}".log 2>/dev/null | head -1)
+        if [ -n "$session_log" ] && [ -f "$session_log" ]; then
             step "查看會話日誌: ${session_log}"
             tail -f "$session_log"
         else
-            error "會話日誌不存在: ${session_log}"
+            error "會話日誌不存在: *_${session}.log"
             echo "可用的日誌:"
-            ls "$LOG_DIR"/claude_*.log 2>/dev/null || echo "  （無）"
+            ls "$LOG_DIR"/*_*.log 2>/dev/null || echo "  （無）"
         fi
     fi
 }
 
 # === 使用說明 ===
 usage() {
-    echo "Claude Code Telegram Bridge 管理工具"
+    echo "AI CLI Telegram Bridge 管理工具"
     echo ""
     echo "用法: $(basename "$0") <命令> [參數]"
     echo ""
