@@ -1,17 +1,17 @@
 **繁體中文** | [English](README.en.md)
 
-# Claude Code Telegram 多會話橋接
+# AI CLI Telegram 多會話橋接
 
-通過 Telegram 與多個正在運行的 Claude Code 實例進行雙向互動。
+通過 Telegram 與多個正在運行的 AI CLI 實例（Claude Code、Gemini CLI）進行雙向互動。
 
 ## 功能特性
 
-- 🔄 **雙向通訊**：Claude Code 的輸出即時推送到 Telegram，Telegram 的訊息也能傳回 Claude Code
-- 🔀 **多會話並行**：同時管理多個 Claude Code 實例，並行執行任務
+- 🔄 **雙向通訊**：AI CLI 的輸出即時推送到 Telegram，Telegram 的訊息也能傳回 AI CLI
+- 🔀 **多會話並行**：同時管理多個 AI CLI 實例（Claude Code、Gemini CLI），並行執行任務
 - 🏷️ **來源標記**：所有回覆都標記來源 `📍 project`，清楚辨識
 - 📮 **智能路由**：使用 `#project` 語法指定目標，或 `#all` 廣播給所有會話
 - 🖥️ **同時操作**：可以同時在終端和 Telegram 與 Claude Code 互動
-- 🤖 **Hook 即時通知**：Claude 完成回應時透過 Hook 即時推送，延遲 < 1 秒
+- 🤖 **Hook 即時通知**：AI CLI 完成回應時透過 Hook 即時推送（Claude: Stop, Gemini: AfterAgent），延遲 < 1 秒
 - 🎯 **互動式按鈕**：確認提示自動轉換為 Inline Keyboard 按鈕
 - 📊 **分段發送**：長訊息自動分段，超長內容上傳為文件
 - 🔒 **用戶驗證**：僅允許特定用戶使用
@@ -190,9 +190,10 @@ Ctrl+B, 然後按 D
 ```yaml
 sessions:
   - name: 會話名稱          # 用於 #name 路由
-    path: 專案路徑          # Claude Code 工作目錄
-    tmux: tmux_會話名稱     # tmux 會話名稱（可選，預設 claude-{name}）
-    claude_args: "啟動參數"  # claude 啟動參數（可選，如 --model sonnet）
+    path: 專案路徑          # CLI 工作目錄
+    cli_type: claude        # CLI 類型（可選，claude 或 gemini，預設 claude）
+    tmux: tmux_會話名稱     # tmux 會話名稱（可選，預設 {cli_type}-{name}）
+    cli_args: "啟動參數"     # CLI 啟動參數（可選）
 ```
 
 **範例：**
@@ -201,19 +202,15 @@ sessions:
 sessions:
   - name: rental
     path: /path/to/rental-management
-    tmux: claude-rental
 
   - name: api
     path: /path/to/api-server
-    tmux: claude-api
+    cli_args: "--model sonnet"
 
-  - name: docs
-    path: /path/to/documentation
-    # tmux 會話名稱會自動設為 claude-docs
-
-  - name: sandbox
-    path: /path/to/sandbox
-    claude_args: "--dangerously-skip-permissions --model sonnet"
+  - name: devops
+    path: /path/to/infrastructure
+    cli_type: gemini
+    cli_args: "--yolo"
 ```
 ### .env 配置
 
@@ -230,8 +227,8 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 ### 即時通知（Hook 驅動）
 
-1. Claude Code 完成回應時觸發 Stop hook
-2. `notify_telegram.sh` 從 hook stdin 讀取 `last_assistant_message`
+1. AI CLI 完成回應時觸發 hook（Claude: Stop, Gemini: AfterAgent）
+2. `notify_telegram.sh` 從 hook stdin 讀取回應（Claude: `last_assistant_message`, Gemini: `prompt_response`）
 3. `send_telegram_notification.py` 透過 Telegram Bot API 即時推送
 4. 延遲 < 1 秒，事件驅動，回覆內容乾淨無 ANSI 碼
 
@@ -258,9 +255,10 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 - `message_router.py` - 訊息路由器
 - `tmux_bridge.py` - Tmux 橋接模組
 - `config.py` - 集中配置管理
+- `cli_provider.py` - CLI 抽象層（Strategy 模式，支援 Claude/Gemini）
 
 **Hook 通知：**
-- `notify_telegram.sh` - Claude Code Stop hook 腳本
+- `notify_telegram.sh` - CLI Hook 腳本（Claude: Stop, Gemini: AfterAgent）
 - `send_telegram_notification.py` - Telegram API 發送器
 
 **啟動與配置：**
@@ -292,10 +290,10 @@ tmux new -s test
 
 ```bash
 # 檢查日誌文件
-ls -la ~/.claude_bridge/logs/claude_*.log
+ls -la ~/.ai_bridge/logs/*_*.log
 
-# 查看日誌
-tail -f ~/.claude_bridge/logs/claude_rental.log
+# 查看日誌（格式：{cli_type}_{session}.log）
+tail -f ~/.ai_bridge/logs/claude_rental.log
 ```
 
 ### Bot 無法啟動
@@ -319,7 +317,7 @@ cat /path/to/project/.claude/settings.local.json
 ls -la notify_telegram.sh send_telegram_notification.py
 
 # 查看 hook 除錯日誌
-cat ~/.claude_bridge/logs/hook_debug_*.log
+cat ~/.ai_bridge/logs/hook_debug_*.log
 
 # 查看 bot 日誌
 ./bridge.sh logs
@@ -357,6 +355,52 @@ A: 使用 `/restart #session` 命令重啟指定會話，例如 `/restart #renta
 
 **Q: 修改配置後需要重啟 Bot 嗎？**
 A: 不需要！使用 `/reload` 命令即可熱重載 `sessions.yaml`，系統會自動添加新會話、移除舊會話，並保持現有會話運行。
+
+## 完整移除
+
+如果要完全移除此專案，請按照以下順序操作。**直接刪除專案資料夾而不清理 hooks 會導致 Claude Code / Gemini CLI 每次回應結束時 hook 報錯。**
+
+### 1. 停止服務
+
+```bash
+./bridge.sh stop    # 停止 bot、清理 tmux 會話、刪除 PID 和日誌
+```
+
+### 2. 清理各專案的 Hook 配置
+
+啟動時 bot 會將 hook 寫入 `sessions.yaml` 中每個專案的配置檔。你需要手動移除這些 hook 條目：
+
+**Claude 專案** — 編輯 `{專案路徑}/.claude/settings.local.json`，移除 `hooks.Stop` 中包含 `notify_telegram.sh` 的條目：
+
+```bash
+# 檢查哪些專案有 hook
+grep -rl "notify_telegram" /path/to/project/.claude/settings.local.json
+```
+
+**Gemini 專案** — 編輯 `{專案路徑}/.gemini/settings.json`，移除 `hooks.AfterAgent` 中包含 `notify_telegram.sh` 的條目。
+
+### 3. 清理 Gemini 信任目錄（如有使用 Gemini）
+
+編輯 `~/.gemini/trustedFolders.json`，移除由此 bot 添加的路徑條目。
+
+### 4. 刪除系統目錄
+
+```bash
+rm -rf ~/.ai_bridge    # 日誌和 PID 檔案
+```
+
+### 5. 刪除專案目錄
+
+```bash
+rm -rf /path/to/ai_bridge
+```
+
+### 6. 確認無殘留 tmux 會話
+
+```bash
+tmux ls    # 檢查是否有殘留的 claude-* 或 gemini-* 會話
+tmux kill-session -t <會話名稱>    # 如有殘留，逐一清除
+```
 
 ## 授權
 

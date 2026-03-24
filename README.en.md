@@ -1,17 +1,17 @@
 [繁體中文](README.md) | **English**
 
-# Claude Code Telegram Multi-Session Bridge
+# AI CLI Telegram Multi-Session Bridge
 
-Interact bidirectionally with multiple running Claude Code instances via Telegram.
+Interact bidirectionally with multiple running AI CLI instances (Claude Code, Gemini CLI) via Telegram.
 
 ## Features
 
-- 🔄 **Bidirectional Communication**: Claude Code output is pushed to Telegram in real-time; Telegram messages are sent back to Claude Code
-- 🔀 **Multi-Session Parallel**: Manage multiple Claude Code instances simultaneously, running tasks in parallel
+- 🔄 **Bidirectional Communication**: AI CLI output is pushed to Telegram in real-time; Telegram messages are sent back to AI CLI
+- 🔀 **Multi-Session Parallel**: Manage multiple AI CLI instances (Claude Code, Gemini CLI) simultaneously, running tasks in parallel
 - 🏷️ **Source Tagging**: All replies are tagged with source `📍 project` for clear identification
 - 📮 **Smart Routing**: Use `#project` syntax to target specific sessions, or `#all` to broadcast to all
 - 🖥️ **Concurrent Access**: Interact with Claude Code from both terminal and Telegram at the same time
-- 🤖 **Hook-Based Notifications**: Instant push when Claude finishes responding via Stop hook, latency < 1 second
+- 🤖 **Hook-Based Notifications**: Instant push when AI CLI finishes responding via hooks (Claude: Stop, Gemini: AfterAgent), latency < 1 second
 - 🎯 **Interactive Buttons**: Confirmation prompts are automatically converted to Inline Keyboard buttons
 - 📊 **Chunked Messages**: Long messages are automatically split; extra-long content is uploaded as files
 - 🔒 **User Authentication**: Only authorized users can access the bot
@@ -190,9 +190,10 @@ Ctrl+B, then press D
 ```yaml
 sessions:
   - name: session_name          # Used for #name routing
-    path: project_path          # Claude Code working directory
-    tmux: tmux_session_name     # tmux session name (optional, defaults to claude-{name})
-    claude_args: "launch args"  # Claude CLI arguments (optional, e.g. --model sonnet)
+    path: project_path          # CLI working directory
+    cli_type: claude            # CLI type (optional, claude or gemini, defaults to claude)
+    tmux: tmux_session_name     # tmux session name (optional, defaults to {cli_type}-{name})
+    cli_args: "launch args"     # CLI arguments (optional)
 ```
 
 **Example:**
@@ -201,19 +202,15 @@ sessions:
 sessions:
   - name: rental
     path: /path/to/rental-management
-    tmux: claude-rental
 
   - name: api
     path: /path/to/api-server
-    tmux: claude-api
+    cli_args: "--model sonnet"
 
-  - name: docs
-    path: /path/to/documentation
-    # tmux session name defaults to claude-docs
-
-  - name: sandbox
-    path: /path/to/sandbox
-    claude_args: "--dangerously-skip-permissions --model sonnet"
+  - name: devops
+    path: /path/to/infrastructure
+    cli_type: gemini
+    cli_args: "--yolo"
 ```
 
 ### .env Configuration
@@ -231,8 +228,8 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 
 ### Instant Notifications (Hook-Driven)
 
-1. Claude Code triggers the Stop hook when it finishes responding
-2. `notify_telegram.sh` reads `last_assistant_message` from hook stdin
+1. AI CLI triggers hook when it finishes responding (Claude: Stop, Gemini: AfterAgent)
+2. `notify_telegram.sh` reads response from hook stdin (Claude: `last_assistant_message`, Gemini: `prompt_response`)
 3. `send_telegram_notification.py` pushes instantly via Telegram Bot API
 4. Latency < 1 second, event-driven, clean reply content without ANSI codes
 
@@ -259,9 +256,10 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 - `message_router.py` - Message router
 - `tmux_bridge.py` - Tmux bridge module
 - `config.py` - Centralized configuration management
+- `cli_provider.py` - CLI abstraction layer (Strategy pattern, supports Claude/Gemini)
 
 **Hook Notifications:**
-- `notify_telegram.sh` - Claude Code Stop hook script
+- `notify_telegram.sh` - CLI Hook script (Claude: Stop, Gemini: AfterAgent)
 - `send_telegram_notification.py` - Telegram API sender
 
 **Launch & Configuration:**
@@ -296,10 +294,10 @@ tmux new -s test
 
 ```bash
 # Check log files
-ls -la ~/.claude_bridge/logs/claude_*.log
+ls -la ~/.ai_bridge/logs/*_*.log
 
-# View logs
-tail -f ~/.claude_bridge/logs/claude_rental.log
+# View logs (format: {cli_type}_{session}.log)
+tail -f ~/.ai_bridge/logs/claude_rental.log
 ```
 
 ### Bot Cannot Start
@@ -323,7 +321,7 @@ cat /path/to/project/.claude/settings.local.json
 ls -la notify_telegram.sh send_telegram_notification.py
 
 # View hook debug logs
-cat ~/.claude_bridge/logs/hook_debug_*.log
+cat ~/.ai_bridge/logs/hook_debug_*.log
 
 # View bot logs
 ./bridge.sh logs
@@ -361,6 +359,52 @@ A: Use the `/restart #session` command to restart a specific session, e.g., `/re
 
 **Q: Do I need to restart the bot after changing configuration?**
 A: No! Use the `/reload` command to hot-reload `sessions.yaml`. The system automatically adds new sessions, removes old ones, and keeps existing sessions running.
+
+## Complete Removal
+
+Follow these steps in order to fully remove this project. **Deleting the project folder without cleaning up hooks will cause Claude Code / Gemini CLI to throw hook errors on every response.**
+
+### 1. Stop the Service
+
+```bash
+./bridge.sh stop    # Stops bot, cleans up tmux sessions, removes PID and logs
+```
+
+### 2. Clean Up Hook Configurations in Each Project
+
+On startup, the bot writes hooks into config files in each project listed in `sessions.yaml`. You need to manually remove these hook entries:
+
+**Claude projects** — Edit `{project_path}/.claude/settings.local.json`, remove entries containing `notify_telegram.sh` from `hooks.Stop`:
+
+```bash
+# Check which projects have hooks
+grep -rl "notify_telegram" /path/to/project/.claude/settings.local.json
+```
+
+**Gemini projects** — Edit `{project_path}/.gemini/settings.json`, remove entries containing `notify_telegram.sh` from `hooks.AfterAgent`.
+
+### 3. Clean Up Gemini Trusted Folders (if using Gemini)
+
+Edit `~/.gemini/trustedFolders.json` and remove path entries added by this bot.
+
+### 4. Remove System Directory
+
+```bash
+rm -rf ~/.ai_bridge    # Logs and PID files
+```
+
+### 5. Remove Project Directory
+
+```bash
+rm -rf /path/to/ai_bridge
+```
+
+### 6. Verify No Residual tmux Sessions
+
+```bash
+tmux ls    # Check for leftover claude-* or gemini-* sessions
+tmux kill-session -t <session_name>    # Remove any remaining sessions
+```
 
 ## License
 
