@@ -13,11 +13,13 @@ logger = logging.getLogger(__name__)
 class SessionConfig:
     """會話配置"""
 
-    def __init__(self, name: str, path: str, tmux_session: str):
+    def __init__(self, name: str, path: str, tmux_session: str,
+                 claude_args: str = ""):
         from config import config as app_config
         self.name = name
         self.path = path
         self.tmux_session = tmux_session
+        self.claude_args = claude_args
         self.log_file = f"{app_config.tmux.LOG_DIR}/claude_{name}.log"
 
 
@@ -28,7 +30,8 @@ class SessionManager:
         self.sessions: Dict[str, SessionConfig] = {}
         self.bridges: Dict[str, TmuxBridge] = {}
 
-    def add_session(self, name: str, path: str, tmux_session: str = None):
+    def add_session(self, name: str, path: str, tmux_session: str = None,
+                    claude_args: str = ""):
         """
         添加一個會話
 
@@ -36,11 +39,12 @@ class SessionManager:
             name: 會話名稱（用於 #name 路由）
             path: 工作目錄
             tmux_session: tmux 會話名稱（如果不提供，使用 name）
+            claude_args: claude 啟動參數（如 --model sonnet）
         """
         if tmux_session is None:
             tmux_session = f"claude-{name}"
 
-        config = SessionConfig(name, path, tmux_session)
+        config = SessionConfig(name, path, tmux_session, claude_args)
         self.sessions[name] = config
 
         # 創建對應的 TmuxBridge
@@ -70,7 +74,9 @@ class SessionManager:
 
             if not bridge.session_exists():
                 logger.info(f"📝 創建會話: {name}")
-                if not bridge.create_session(work_dir=config.path, session_alias=name):
+                if not bridge.create_session(work_dir=config.path,
+                                             session_alias=name,
+                                             claude_args=config.claude_args):
                     logger.error(f"❌ 創建會話失敗: {name}")
                     success = False
             else:
@@ -102,6 +108,7 @@ class SessionManager:
                 'path': config.path,
                 'tmux_session': config.tmux_session,
                 'log_file': config.log_file,
+                'claude_args': config.claude_args,
                 'exists': bridge.session_exists(),
                 'status': bridge.get_status()
             }

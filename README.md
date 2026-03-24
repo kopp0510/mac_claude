@@ -192,6 +192,7 @@ sessions:
   - name: 會話名稱          # 用於 #name 路由
     path: 專案路徑          # Claude Code 工作目錄
     tmux: tmux_會話名稱     # tmux 會話名稱（可選，預設 claude-{name}）
+    claude_args: "啟動參數"  # claude 啟動參數（可選，如 --model sonnet）
 ```
 
 **範例：**
@@ -209,6 +210,10 @@ sessions:
   - name: docs
     path: /path/to/documentation
     # tmux 會話名稱會自動設為 claude-docs
+
+  - name: sandbox
+    path: /path/to/sandbox
+    claude_args: "--dangerously-skip-permissions --model sonnet"
 ```
 ### .env 配置
 

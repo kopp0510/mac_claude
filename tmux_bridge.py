@@ -74,13 +74,15 @@ class TmuxBridge:
             return False
 
     def create_session(self, work_dir: Optional[str] = None,
-                       session_alias: Optional[str] = None) -> bool:
+                       session_alias: Optional[str] = None,
+                       claude_args: str = "") -> bool:
         """
         創建 tmux 會話並啟動 Claude Code
 
         Args:
             work_dir: 工作目錄
             session_alias: 會話別名（用於 hook 通知）
+            claude_args: claude 啟動參數（如 --model sonnet）
 
         Returns:
             bool: 是否成功
@@ -125,7 +127,8 @@ class TmuxBridge:
             time.sleep(config.tmux.SESSION_INIT_DELAY)
 
             # 在會話中啟動 claude
-            self.send_command('claude')
+            claude_cmd = f"claude {claude_args}".strip() if claude_args else "claude"
+            self.send_command(claude_cmd)
 
             logger.info(f"tmux 會話 '{self.session_name}' 已創建")
             logger.info(f"日誌文件: {self.log_file}")

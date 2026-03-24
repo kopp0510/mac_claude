@@ -141,7 +141,7 @@ Telegram 用戶
 - 使用 `config.py` 中預編譯的 `patterns.MESSAGE_ROUTE`（`r'^#([\w\-]+)\s+(.+)$'`），允許會話名稱包含底線和連字號
 
 **SessionManager (session_manager.py)**
-- 將會話名稱映射到 SessionConfig (name, path, tmux_session, log_file)
+- 將會話名稱映射到 SessionConfig (name, path, tmux_session, claude_args, log_file)
 - 每個會話有自己的 TmuxBridge 實例
 - 支援透過 telegram_bot_multi.py 中的 `reload_sessions_config()` 熱重載
 - `restart_session()` 終止舊 tmux 會話並創建新的
@@ -152,6 +152,7 @@ Telegram 用戶
 - 發送命令：`tmux send-keys -t {session} -l {text}` 然後 `tmux send-keys Enter`
 - 日誌文件格式：`~/.claude_bridge/logs/claude_{session_name}.log`
 - **配置 Claude Code hooks**：在會話創建時自動寫入 `.claude/settings.local.json`，設置 Stop hook 觸發通知腳本
+- **自訂啟動參數**：透過 `claude_args` 支援 `--model`、`--dangerously-skip-permissions` 等 CLI 參數
 
 **notify_telegram.sh（Hook 腳本）**
 - 由 Claude Code 的 Stop hook 觸發（當 Claude 完成回應時）
@@ -190,12 +191,14 @@ sessions:
   - name: rental              # 用於路由：#rental
     path: /path/to/project   # Claude Code 的工作目錄
     tmux: claude-rental      # 可選：tmux 會話名稱（預設為 claude-{name}）
+    claude_args: "--model sonnet"  # 可選：claude 啟動參數
 ```
 
 **重要事項**：
 - `name` 用於 Telegram 路由（`#name`）
 - `tmux` 是實際的 tmux 會話名稱（可以與 `name` 不同）
 - `path` 必須是絕對路徑
+- `claude_args` 可選，用於自訂 claude 啟動參數（如 `--model sonnet`、`--dangerously-skip-permissions`）
 - 文件不在版本控制中（在 .gitignore 裡）
 
 ### .env 變數

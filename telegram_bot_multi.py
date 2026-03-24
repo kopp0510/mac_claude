@@ -142,6 +142,8 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{status_emoji} #{name}")
         lines.append(f"   路徑: {info['path']}")
         lines.append(f"   tmux: {info['tmux_session']}")
+        if info.get('claude_args'):
+            lines.append(f"   參數: {info['claude_args']}")
         lines.append(f"   狀態: {'運行中' if info['exists'] else '未啟動'}")
         lines.append(f"   通知: Hook 驅動\n")
 
@@ -333,8 +335,9 @@ def load_sessions_config():
             name = session['name']
             path = session['path']
             tmux = session.get('tmux')
+            claude_args = session.get('claude_args', '')
 
-            session_manager.add_session(name, path, tmux)
+            session_manager.add_session(name, path, tmux, claude_args)
 
         logger.info(f"✅ 載入 {len(config['sessions'])} 個會話配置")
 
@@ -387,15 +390,18 @@ def reload_sessions_config():
             name = session['name']
             path = session['path']
             tmux = session.get('tmux')
+            claude_args = session.get('claude_args', '')
 
-            new_manager.add_session(name, path, tmux)
+            new_manager.add_session(name, path, tmux, claude_args)
 
             # 新增的會話，創建 tmux 會話
             if name in added:
                 logger.info(f"  新增會話: {name}")
                 bridge = new_manager.get_bridge(name)
                 if not bridge.session_exists():
-                    bridge.create_session(work_dir=path)
+                    bridge.create_session(work_dir=path,
+                                          session_alias=name,
+                                          claude_args=claude_args)
 
         # 更新全域狀態
         bot_state.update_session_manager(new_manager)

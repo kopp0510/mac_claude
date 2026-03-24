@@ -192,6 +192,7 @@ sessions:
   - name: session_name          # Used for #name routing
     path: project_path          # Claude Code working directory
     tmux: tmux_session_name     # tmux session name (optional, defaults to claude-{name})
+    claude_args: "launch args"  # Claude CLI arguments (optional, e.g. --model sonnet)
 ```
 
 **Example:**
@@ -209,6 +210,10 @@ sessions:
   - name: docs
     path: /path/to/documentation
     # tmux session name defaults to claude-docs
+
+  - name: sandbox
+    path: /path/to/sandbox
+    claude_args: "--dangerously-skip-permissions --model sonnet"
 ```
 
 ### .env Configuration
