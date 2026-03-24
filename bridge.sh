@@ -45,6 +45,19 @@ is_running() {
     return 1
 }
 
+# === 虛擬環境管理 ===
+ensure_venv() {
+    if [ ! -d "$VENV_DIR" ]; then
+        step "創建虛擬環境..."
+        python3 -m venv "$VENV_DIR"
+    fi
+
+    if ! "$VENV_DIR/bin/python3" -c "import telegram; import yaml; import requests" 2>/dev/null; then
+        step "安裝 Python 依賴..."
+        "$VENV_DIR/bin/pip3" install -q -r "$SCRIPT_DIR/requirements.txt"
+    fi
+}
+
 # === 配置驗證 ===
 do_validate() {
     echo "🔍 驗證配置..."
@@ -52,11 +65,9 @@ do_validate() {
 
     local errors=0
 
-    # 優先使用 venv 的 Python（有依賴）
-    local PYTHON="python3"
-    if [ -x "$VENV_DIR/bin/python3" ]; then
-        PYTHON="$VENV_DIR/bin/python3"
-    fi
+    # 確保 venv 和依賴就緒（驗證需要 PyYAML）
+    ensure_venv
+    local PYTHON="$VENV_DIR/bin/python3"
 
     # 1. .env 存在
     if [ -f "$SCRIPT_DIR/.env" ]; then
@@ -160,16 +171,8 @@ for s in (c.get('sessions', []) if c else []):
     fi
 
     # 6. Python 依賴
-    if [ -d "$VENV_DIR" ]; then
-        info "虛擬環境存在"
-        if "$VENV_DIR/bin/python3" -c "import telegram; import yaml; import requests" 2>/dev/null; then
-            info "Python 依賴已安裝"
-        else
-            warn "Python 依賴不完整（啟動時會自動安裝）"
-        fi
-    else
-        warn "虛擬環境不存在（啟動時會自動創建）"
-    fi
+    info "虛擬環境就緒"
+    info "Python 依賴已安裝"
 
     # 7. 日誌目錄
     if [ -d "$LOG_DIR" ]; then
@@ -205,19 +208,6 @@ do_start() {
     echo ""
     step "初始化環境..."
     init_dirs
-
-    # 確保虛擬環境存在
-    if [ ! -d "$VENV_DIR" ]; then
-        step "創建虛擬環境..."
-        python3 -m venv "$VENV_DIR"
-    fi
-
-    # 啟動虛擬環境並安裝依賴
-    source "$VENV_DIR/bin/activate"
-    if ! python3 -c "import telegram; import yaml; import requests" 2>/dev/null; then
-        step "安裝 Python 依賴..."
-        pip3 install -q -r "$SCRIPT_DIR/requirements.txt"
-    fi
 
     # 確保腳本有執行權限
     chmod +x "$SCRIPT_DIR/notify_telegram.sh" 2>/dev/null || true
@@ -295,12 +285,9 @@ do_stop() {
 
 # === 獲取配置的 tmux 會話名稱列表 ===
 get_configured_tmux_sessions() {
-    local PYTHON="python3"
-    if [ -x "$VENV_DIR/bin/python3" ]; then
-        PYTHON="$VENV_DIR/bin/python3"
-    fi
+    local PYTHON="$VENV_DIR/bin/python3"
 
-    if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
+    if [ -f "$SCRIPT_DIR/sessions.yaml" ] && [ -x "$PYTHON" ]; then
         $PYTHON -c "
 import yaml
 with open('$SCRIPT_DIR/sessions.yaml') as f:
