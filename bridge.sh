@@ -158,6 +158,14 @@ except Exception:
         [ -z "$cli_type" ] && continue
         if command -v "$cli_type" &>/dev/null; then
             info "${cli_type} CLI 已安裝"
+            # 版本檢查確認 CLI 可正常執行
+            cli_version=$("$cli_type" --version 2>/dev/null)
+            if [ $? -eq 0 ] && [ -n "$cli_version" ]; then
+                info "${cli_type} CLI 版本: ${cli_version}"
+            else
+                warn "${cli_type} CLI 已安裝但無法取得版本資訊"
+            fi
+            warn "請確認 ${cli_type} CLI 已完成登入認證（本工具不處理登入）"
         else
             error "${cli_type} CLI 未安裝"
             errors=$((errors + 1))

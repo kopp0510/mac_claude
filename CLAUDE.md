@@ -1,6 +1,7 @@
 # CLAUDE.md
 
 透過 tmux 橋接多個 AI CLI 實例（Claude Code、Gemini CLI）的 Telegram Bot。
+**僅負責訊息轉發，不處理 CLI 登入認證。**
 
 ## 開發命令
 
@@ -105,6 +106,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - `shlex.quote()` 防護 shell 注入
 - ALLOWED_USER_IDS 為必填，空白拒絕啟動
 - 每用戶速率限制：5 秒內最多 3 則
+- **登入由使用者自行處理**：本專案僅負責 Telegram ↔ CLI 的訊息轉發，不處理 Claude Code 或 Gemini CLI 的登入/認證。使用前須確保 CLI 已完成登入（`claude` / `gemini` 可正常執行）
 
 ## 故障排除
 
