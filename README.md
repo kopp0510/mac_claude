@@ -17,6 +17,53 @@
 - 🔒 **用戶驗證**：僅允許特定用戶使用
 - ⚡ **訊息佇列**：避免衝突，訊息依序處理
 
+## 支援列表
+
+### 支援的 AI CLI 工具
+
+| CLI 工具 | Hook 類型 | 配置目錄 | 啟動命令 |
+|----------|-----------|----------|---------|
+| Claude Code | Stop | `.claude/settings.local.json` | `claude {args}` |
+| Gemini CLI | AfterAgent | `.gemini/settings.json` | `gemini {args}` |
+
+### Telegram 命令
+
+| 命令 | 說明 |
+|------|------|
+| `/start` | 顯示歡迎訊息與可用會話列表 |
+| `/status` | 查看所有會話狀態（路徑、tmux、CLI 類型、Hook 狀態） |
+| `/sessions` | 列出配置的會話與使用方式 |
+| `/restart #session` | 終止並重建指定會話的 tmux 環境 |
+| `/reload` | 熱重載 sessions.yaml 配置（無需重啟 Bot） |
+
+### bridge.sh 管理命令
+
+| 子命令 | 說明 |
+|--------|------|
+| `start` | 後台啟動 Bot（含配置驗證、venv 初始化） |
+| `stop` | 優雅停止 Bot 並清理所有 tmux 會話 |
+| `restart` | 重啟 Bot（先 stop 後 start） |
+| `status` | 顯示 Bot 與會話運行狀態 |
+| `logs [session]` | 查看 Bot 主日誌或指定會話日誌 |
+| `validate` | 驗證所有配置（.env、sessions.yaml、CLI 安裝、權限） |
+
+### 功能特性一覽
+
+| 功能 | 說明 |
+|------|------|
+| 雙向通訊 | Telegram ↔ AI CLI，Hook 驅動即時推送（延遲 < 1 秒） |
+| 多 CLI 支援 | Claude Code + Gemini CLI，Strategy 模式抽象 |
+| 多會話並行 | 同時管理多個獨立 CLI 實例 |
+| 智能路由 | `#session` 指定目標、`#all` 廣播（無預設會話） |
+| 互動按鈕 | 確認提示自動轉 Inline Keyboard |
+| 訊息佇列 | 序列化處理，最大 1000 訊息 |
+| 速率限制 | 每用戶 5 秒最多 3 則訊息 |
+| 用戶驗證 | ALLOWED_USER_IDS 白名單，未設定拒絕啟動 |
+| 訊息截斷 | 超過 4000 字元自動截斷 |
+| 日誌輪替 | 超過 10MB 自動截斷至 5MB |
+| 熱重載 | `/reload` 更新配置，不中斷現有會話 |
+| Markdown fallback | 格式解析失敗自動改用純文字 |
+
 ## 系統架構
 
 ```

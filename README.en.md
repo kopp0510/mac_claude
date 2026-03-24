@@ -17,6 +17,53 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 - 🔒 **User Authentication**: Only authorized users can access the bot
 - ⚡ **Message Queue**: Sequential processing to avoid conflicts
 
+## Support Matrix
+
+### Supported AI CLI Tools
+
+| CLI Tool | Hook Type | Config Path | Launch Command |
+|----------|-----------|-------------|---------------|
+| Claude Code | Stop | `.claude/settings.local.json` | `claude {args}` |
+| Gemini CLI | AfterAgent | `.gemini/settings.json` | `gemini {args}` |
+
+### Telegram Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Show welcome message and available sessions |
+| `/status` | View all session status (path, tmux, CLI type, Hook status) |
+| `/sessions` | List configured sessions and usage |
+| `/restart #session` | Terminate and recreate a session's tmux environment |
+| `/reload` | Hot-reload sessions.yaml configuration (no bot restart needed) |
+
+### bridge.sh Management Commands
+
+| Subcommand | Description |
+|------------|-------------|
+| `start` | Start bot in background (with config validation, venv init) |
+| `stop` | Gracefully stop bot and clean up all tmux sessions |
+| `restart` | Restart bot (stop then start) |
+| `status` | Show bot and session running status |
+| `logs [session]` | View bot main log or specific session log |
+| `validate` | Validate all configs (.env, sessions.yaml, CLI installation, permissions) |
+
+### Feature Overview
+
+| Feature | Description |
+|---------|-------------|
+| Bidirectional Communication | Telegram ↔ AI CLI, Hook-driven instant push (latency < 1s) |
+| Multi-CLI Support | Claude Code + Gemini CLI, Strategy pattern abstraction |
+| Multi-Session Parallel | Manage multiple independent CLI instances simultaneously |
+| Smart Routing | `#session` targeting, `#all` broadcast (no default session) |
+| Interactive Buttons | Confirmation prompts auto-converted to Inline Keyboard |
+| Message Queue | Sequential processing, max 1000 messages |
+| Rate Limiting | Max 3 messages per user per 5 seconds |
+| User Authentication | ALLOWED_USER_IDS whitelist, refuses to start if unset |
+| Message Truncation | Auto-truncate messages over 4000 characters |
+| Log Rotation | Auto-truncate logs over 10MB to 5MB |
+| Hot Reload | `/reload` updates config without interrupting existing sessions |
+| Markdown Fallback | Auto-retry with plain text when Markdown parsing fails |
+
 ## System Architecture
 
 ```
