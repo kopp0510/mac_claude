@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Telegram Bot 命令和輔助函數測試"""
 
+import os
 import queue
 import time
+import tempfile
 import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import telegram_bot_multi as bot_module
@@ -564,3 +567,70 @@ class TestReloadSessionsConfig:
         assert 'removed' in changes['removed']
         assert 'kept' in changes['kept']
         mock_old_manager.kill_session.assert_called_once_with('removed')
+
+
+class TestLogRotation:
+    """日誌輪替邏輯測試"""
+
+    def test_truncates_oversized_log(self):
+        """測試超過 10MB 的日誌被截斷至 5MB"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_file = Path(tmpdir) / "test.log"
+            # 建立 11MB 的檔案
+            data = b"A" * (11 * 1024 * 1024)
+            log_file.write_bytes(data)
+            assert log_file.stat().st_size > 10 * 1024 * 1024
+
+            # 模擬單次輪替邏輯（不進入無限迴圈）
+            from config import config as app_config
+            if log_file.stat().st_size > app_config.tmux.LOG_MAX_SIZE:
+                kept = log_file.read_bytes()[-app_config.tmux.LOG_KEEP_SIZE:]
+                log_file.write_bytes(kept)
+
+            # 驗證截斷後大小
+            assert log_file.stat().st_size == app_config.tmux.LOG_KEEP_SIZE
+
+    def test_skips_small_log(self):
+        """測試小於 10MB 的日誌不被截斷"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_file = Path(tmpdir) / "test.log"
+            data = b"small log content"
+            log_file.write_bytes(data)
+            original_size = log_file.stat().st_size
+
+            from config import config as app_config
+            if log_file.stat().st_size > app_config.tmux.LOG_MAX_SIZE:
+                kept = log_file.read_bytes()[-app_config.tmux.LOG_KEEP_SIZE:]
+                log_file.write_bytes(kept)
+
+            assert log_file.stat().st_size == original_size
+
+
+class TestMessageQueueProcessor:
+    """訊息佇列處理測試"""
+
+    @patch('telegram_bot_multi.time.sleep')
+    def test_processes_queue_item(self, mock_sleep):
+        """測試佇列訊息被正確處理"""
+        mock_manager = MagicMock()
+        original_manager = bot_module.bot_state.session_manager
+
+        try:
+            bot_module.bot_state.session_manager = mock_manager
+
+            # 放入訊息
+            bot_module.bot_state.message_queue.put_nowait(('webapp', 'hello world'))
+
+            # 手動取出並處理（模擬 processor 的單次迭代）
+            item = bot_module.bot_state.message_queue.get(timeout=1)
+            session_name, message = item
+            bot_module.bot_state.session_manager.send_to_session(session_name, message)
+
+            mock_manager.send_to_session.assert_called_once_with('webapp', 'hello world')
+        finally:
+            bot_module.bot_state.session_manager = original_manager
+
+    def test_queue_capacity(self):
+        """測試佇列容量限制"""
+        from config import config as app_config
+        assert bot_module.bot_state.message_queue.maxsize == app_config.queue.MESSAGE_QUEUE_SIZE

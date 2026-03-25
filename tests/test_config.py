@@ -4,33 +4,18 @@
 """
 
 import pytest
-from config import config, patterns, AppConfig, TelegramConfig, MonitorConfig
+from config import config, patterns, AppConfig
 
 
 class TestConfig:
     """配置類測試"""
 
-    def test_telegram_config_defaults(self):
-        """測試 Telegram 配置預設值"""
-        tc = TelegramConfig()
-        assert tc.MAX_MESSAGE_LENGTH == 4000
-        assert tc.MAX_TOTAL_LENGTH == 12000
-        assert tc.API_TIMEOUT == 10
-        assert tc.MAX_RETRIES == 3
-
-    def test_monitor_config_defaults(self):
-        """測試監控配置預設值"""
-        mc = MonitorConfig()
-        assert mc.IDLE_TIMEOUT == 8.0
-        assert mc.POLL_INTERVAL == 0.2
-        assert mc.MAX_BUFFER_SIZE == 100000
-
     def test_app_config_instance(self):
         """測試全域配置實例"""
         assert config is not None
-        assert config.telegram is not None
-        assert config.monitor is not None
         assert config.tmux is not None
+        assert config.queue is not None
+        assert config.security is not None
 
 
 class TestPatterns:

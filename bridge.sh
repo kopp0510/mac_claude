@@ -411,17 +411,34 @@ do_status() {
 
     # tmux 會話狀態
     echo "🖥️  tmux 會話:"
-    local configured has_active=false
-    configured=$(get_configured_tmux_sessions)
-    if [ -n "$configured" ]; then
-        while IFS= read -r session; do
-            if tmux has-session -t "$session" 2>/dev/null; then
-                echo "   ✅ ${session}（運行中）"
+    local session_info has_active=false
+    local PYTHON="python3"
+    [ -x "$VENV_DIR/bin/python3" ] && PYTHON="$VENV_DIR/bin/python3"
+
+    session_info=$($PYTHON -c "
+import yaml
+try:
+    with open('$SCRIPT_DIR/sessions.yaml') as f:
+        c = yaml.safe_load(f)
+    for s in (c.get('sessions', []) if c else []):
+        name = s.get('name', '')
+        cli_type = s.get('cli_type', 'claude')
+        prefix = 'gemini-' if cli_type == 'gemini' else 'claude-'
+        tmux = s.get('tmux', f'{prefix}{name}')
+        print(f'{tmux}:{name}')
+except Exception:
+    pass
+" 2>/dev/null)
+
+    if [ -n "$session_info" ]; then
+        while IFS=: read -r tmux_name session_name; do
+            if tmux has-session -t "$tmux_name" 2>/dev/null; then
+                echo "   ✅ ${tmux_name}（運行中）  ← logs: ${session_name}"
                 has_active=true
             else
-                echo "   ❌ ${session}（未啟動）"
+                echo "   ❌ ${tmux_name}（未啟動）  ← logs: ${session_name}"
             fi
-        done <<< "$configured"
+        done <<< "$session_info"
     fi
     if [ "$has_active" = false ]; then
         echo "   （無活躍的會話）"
@@ -491,7 +508,7 @@ usage() {
     echo ""
     echo "範例:"
     echo "  $(basename "$0") start"
-    echo "  $(basename "$0") logs lottery_api"
+    echo "  $(basename "$0") logs webapp"
     echo "  $(basename "$0") status"
 }
 
