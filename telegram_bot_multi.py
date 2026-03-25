@@ -169,7 +169,7 @@ async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("❌ 請指定會話名稱，例如: /restart #rental")
+        await update.message.reply_text("❌ 請指定會話名稱，例如: /restart #webapp")
         return
 
     session_name = context.args[0].replace('#', '').replace('@', '')

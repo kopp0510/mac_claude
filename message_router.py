@@ -26,8 +26,8 @@ class MessageRouter:
             List of (session_name, actual_message)
 
         範例:
-            "#rental 查詢路徑" -> [('rental', '查詢路徑')]
-            "#all 執行測試" -> [('rental', '執行測試'), ('api', '執行測試')]
+            "#webapp 查詢路徑" -> [('webapp', '查詢路徑')]
+            "#all 執行測試" -> [('webapp', '執行測試'), ('api', '執行測試')]
             "查詢路徑" -> [('__error__', '請使用 #project 指定目標會話')]
         """
         # 檢測 #all
@@ -56,7 +56,7 @@ class MessageRouter:
 
         # 生成可用會話列表
         session_list = '、'.join([f'#{name}' for name in sessions])
-        return [('__error__', f'❌ 請指定目標會話\n\n可用會話：{session_list}\n\n範例：#rental 你的訊息')]
+        return [('__error__', f'❌ 請指定目標會話\n\n可用會話：{session_list}\n\n範例：#webapp 你的訊息')]
 
     def format_session_list(self) -> str:
         """
@@ -90,14 +90,14 @@ if __name__ == '__main__':
     from session_manager import SessionManager
 
     manager = SessionManager()
-    manager.add_session('rental', '/path/to/rental')
+    manager.add_session('webapp', '/path/to/webapp')
     manager.add_session('api', '/path/to/api')
 
     router = MessageRouter(manager)
 
     # 測試解析
     tests = [
-        "#rental 查詢路徑",
+        "#webapp 查詢路徑",
         "#all 執行測試",
         "普通訊息",
         "#notexist 測試"

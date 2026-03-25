@@ -69,7 +69,7 @@
 ```
                     Telegram 用戶
                          │
-                    #rental 訊息
+                    #webapp 訊息
                     #api 訊息
                     #all 訊息
                          │
@@ -83,11 +83,11 @@
           ▼              ▼              ▼
     ┌─────────┐    ┌─────────┐    ┌─────────┐
     │  tmux   │    │  tmux   │    │  tmux   │
-    │ rental  │    │   api   │    │  docs   │
+    │ webapp  │    │   api   │    │  docs   │
     └────┬────┘    └────┬────┘    └────┬────┘
          │              │              │
          ▼              ▼              ▼
-    [#rental]       [#api]         [#docs]
+    [#webapp]       [#api]         [#docs]
          │              │              │
          └──────────────┼──────────────┘
                         ▼
@@ -137,9 +137,9 @@ ALLOWED_USER_IDS=你的_user_id
 
 ```yaml
 sessions:
-  - name: rental
-    path: /Users/你的用戶名/project/rental-management
-    tmux: claude-rental
+  - name: webapp
+    path: /Users/你的用戶名/project/webapp-project
+    tmux: claude-webapp
 
   - name: api
     path: /Users/你的用戶名/project/api-server
@@ -161,7 +161,7 @@ sessions:
 在 Telegram 中發送訊息：
 
 ```
-#rental 查詢當前路徑          → 發送給 rental 會話
+#webapp 查詢當前路徑          → 發送給 webapp 會話
 #api 執行測試                → 發送給 api 會話
 #all 生成文檔                → 發送給所有會話
 ```
@@ -173,7 +173,7 @@ sessions:
 所有回覆都會標記來源（Hook 驅動，即時推送）：
 
 ```
-📍 rental
+📍 webapp
 
 這是一個房租管理系統...
 
@@ -195,7 +195,7 @@ sessions:
 當 Claude 詢問確認時，會自動顯示按鈕：
 
 ```
-[#rental]
+[#webapp]
 Do you want to proceed with editing these 3 files?
   1. Yes, proceed with edits
   2. No, cancel
@@ -211,7 +211,7 @@ Do you want to proceed with editing these 3 files?
 ./bridge.sh restart        # 重啟 Bot
 ./bridge.sh status         # 查看 Bot 和會話狀態
 ./bridge.sh logs           # 查看 Bot 主日誌
-./bridge.sh logs rental    # 查看指定會話日誌
+./bridge.sh logs webapp    # 查看指定會話日誌
 ./bridge.sh validate       # 驗證配置
 ```
 
@@ -247,8 +247,8 @@ sessions:
 
 ```yaml
 sessions:
-  - name: rental
-    path: /path/to/rental-management
+  - name: webapp
+    path: /path/to/webapp-project
 
   - name: api
     path: /path/to/api-server
@@ -340,7 +340,7 @@ tmux new -s test
 ls -la ~/.ai_bridge/logs/*_*.log
 
 # 查看日誌（格式：{cli_type}_{session}.log）
-tail -f ~/.ai_bridge/logs/claude_rental.log
+tail -f ~/.ai_bridge/logs/claude_webapp.log
 ```
 
 ### Bot 無法啟動
@@ -398,7 +398,7 @@ A: 使用管理工具一鍵停止（自動清理所有 tmux 會話）：
 A: 在 `sessions.yaml` 添加新配置，然後使用 `/reload` 命令熱重載配置，無需重啟 Bot。
 
 **Q: 會話出現問題如何重啟？**
-A: 使用 `/restart #session` 命令重啟指定會話，例如 `/restart #rental`。這會終止舊的 tmux 會話並創建新的會話。
+A: 使用 `/restart #session` 命令重啟指定會話，例如 `/restart #webapp`。這會終止舊的 tmux 會話並創建新的會話。
 
 **Q: 修改配置後需要重啟 Bot 嗎？**
 A: 不需要！使用 `/reload` 命令即可熱重載 `sessions.yaml`，系統會自動添加新會話、移除舊會話，並保持現有會話運行。

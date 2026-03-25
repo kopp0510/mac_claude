@@ -15,11 +15,11 @@ class TestMessageRouter:
     def mock_session_manager(self):
         """建立模擬的 SessionManager"""
         manager = MagicMock()
-        manager.get_all_sessions.return_value = ['rental', 'mac_claude', 'test']
+        manager.get_all_sessions.return_value = ['webapp', 'mac_claude', 'test']
 
         # get_session 需要回傳帶 path/tmux_session 屬性的物件，或不存在時回傳 None
         valid_sessions = {
-            'rental': MagicMock(path='/tmp/rental', tmux_session='claude-rental'),
+            'webapp': MagicMock(path='/tmp/webapp', tmux_session='claude-webapp'),
             'mac_claude': MagicMock(path='/tmp/mac_claude', tmux_session='claude-mac_claude'),
             'test': MagicMock(path='/tmp/test', tmux_session='claude-test'),
         }
@@ -33,9 +33,9 @@ class TestMessageRouter:
 
     def test_parse_single_session(self, router):
         """測試單會話路由"""
-        result = router.parse_message("#rental hello world")
+        result = router.parse_message("#webapp hello world")
         assert len(result) == 1
-        assert result[0][0] == "rental"
+        assert result[0][0] == "webapp"
         assert result[0][1] == "hello world"
 
     def test_parse_all_sessions(self, router):
@@ -43,7 +43,7 @@ class TestMessageRouter:
         result = router.parse_message("#all hello everyone")
         assert len(result) == 3  # 3 個會話
         session_names = [r[0] for r in result]
-        assert "rental" in session_names
+        assert "webapp" in session_names
         assert "mac_claude" in session_names
 
     def test_parse_invalid_session(self, router):
@@ -68,6 +68,6 @@ class TestMessageRouter:
     def test_format_session_list(self, router):
         """測試會話列表格式化"""
         result = router.format_session_list()
-        assert "#rental" in result
+        assert "#webapp" in result
         assert "#mac_claude" in result
         assert "#test" in result

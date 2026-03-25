@@ -69,7 +69,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 ```
                     Telegram User
                          │
-                    #rental message
+                    #webapp message
                     #api message
                     #all message
                          │
@@ -83,11 +83,11 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
           ▼              ▼              ▼
     ┌─────────┐    ┌─────────┐    ┌─────────┐
     │  tmux   │    │  tmux   │    │  tmux   │
-    │ rental  │    │   api   │    │  docs   │
+    │ webapp  │    │   api   │    │  docs   │
     └────┬────┘    └────┬────┘    └────┬────┘
          │              │              │
          ▼              ▼              ▼
-    [#rental]       [#api]         [#docs]
+    [#webapp]       [#api]         [#docs]
          │              │              │
          └──────────────┼──────────────┘
                         ▼
@@ -137,9 +137,9 @@ ALLOWED_USER_IDS=your_user_id
 
 ```yaml
 sessions:
-  - name: rental
-    path: /Users/your_username/project/rental-management
-    tmux: claude-rental
+  - name: webapp
+    path: /Users/your_username/project/webapp-project
+    tmux: claude-webapp
 
   - name: api
     path: /Users/your_username/project/api-server
@@ -161,7 +161,7 @@ sessions:
 Send messages in Telegram:
 
 ```
-#rental check current path           → Send to rental session
+#webapp check current path           → Send to webapp session
 #api run tests                       → Send to api session
 #all generate docs                   → Send to all sessions
 ```
@@ -173,7 +173,7 @@ Send messages in Telegram:
 All replies are tagged with their source (Hook-driven, instant push):
 
 ```
-📍 rental
+📍 webapp
 
 This is a rent management system...
 
@@ -195,7 +195,7 @@ Tests complete! All tests passed.
 When Claude asks for confirmation, buttons are displayed automatically:
 
 ```
-[#rental]
+[#webapp]
 Do you want to proceed with editing these 3 files?
   1. Yes, proceed with edits
   2. No, cancel
@@ -211,7 +211,7 @@ Do you want to proceed with editing these 3 files?
 ./bridge.sh restart        # Restart bot
 ./bridge.sh status         # View bot and session status
 ./bridge.sh logs           # View bot main log
-./bridge.sh logs rental    # View specific session log
+./bridge.sh logs webapp    # View specific session log
 ./bridge.sh validate       # Validate configuration
 ```
 
@@ -247,8 +247,8 @@ sessions:
 
 ```yaml
 sessions:
-  - name: rental
-    path: /path/to/rental-management
+  - name: webapp
+    path: /path/to/webapp-project
 
   - name: api
     path: /path/to/api-server
@@ -344,7 +344,7 @@ tmux new -s test
 ls -la ~/.ai_bridge/logs/*_*.log
 
 # View logs (format: {cli_type}_{session}.log)
-tail -f ~/.ai_bridge/logs/claude_rental.log
+tail -f ~/.ai_bridge/logs/claude_webapp.log
 ```
 
 ### Bot Cannot Start
@@ -402,7 +402,7 @@ A: Use the management tool for one-click shutdown (automatically cleans up all t
 A: Add a new configuration in `sessions.yaml`, then use the `/reload` command to hot-reload without restarting the bot.
 
 **Q: How to restart a problematic session?**
-A: Use the `/restart #session` command to restart a specific session, e.g., `/restart #rental`. This terminates the old tmux session and creates a new one.
+A: Use the `/restart #session` command to restart a specific session, e.g., `/restart #webapp`. This terminates the old tmux session and creates a new one.
 
 **Q: Do I need to restart the bot after changing configuration?**
 A: No! Use the `/reload` command to hot-reload `sessions.yaml`. The system automatically adds new sessions, removes old ones, and keeps existing sessions running.

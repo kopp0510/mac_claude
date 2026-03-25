@@ -37,10 +37,10 @@ tmux attach -t claude-myproject  # 連接會話
 
 ```yaml
 sessions:
-  - name: rental              # 用於路由：#rental
+  - name: webapp              # 用於路由：#webapp
     path: /path/to/project   # 絕對路徑
     cli_type: claude          # 可選：claude（預設）或 gemini
-    tmux: claude-rental      # 可選：預設為 {cli_type}-{name}
+    tmux: claude-webapp      # 可選：預設為 {cli_type}-{name}
     cli_args: "--model sonnet"  # 可選
 
   - name: devops

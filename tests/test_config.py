@@ -69,16 +69,16 @@ class TestPatterns:
 
     def test_session_name_pattern(self):
         """測試會話名稱模式"""
-        assert patterns.SESSION_NAME.match("rental") is not None
+        assert patterns.SESSION_NAME.match("webapp") is not None
         assert patterns.SESSION_NAME.match("mac_claude") is not None
         assert patterns.SESSION_NAME.match("test-123") is not None
         assert patterns.SESSION_NAME.match("invalid name") is None
 
     def test_message_route_pattern(self):
         """測試訊息路由模式"""
-        match = patterns.MESSAGE_ROUTE.match("#rental hello world")
+        match = patterns.MESSAGE_ROUTE.match("#webapp hello world")
         assert match is not None
-        assert match.group(1) == "rental"
+        assert match.group(1) == "webapp"
         assert match.group(2) == "hello world"
 
     def test_box_chars_pattern(self):
