@@ -96,6 +96,14 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 
 ## Quick Start
 
+### Prerequisites
+
+> **Important**: This tool only bridges messages between Telegram and CLI — it does NOT handle CLI login. Before starting, make sure:
+
+1. **CLI is logged in**: Run `claude` or `gemini` in terminal and confirm it works interactively (not a login screen)
+2. **tmux is installed**: `tmux -V`
+3. **Python 3.8+**: `python3 --version`
+
 ### 1. Install Dependencies
 
 ```bash

@@ -165,7 +165,13 @@ except Exception:
             else
                 warn "${cli_type} CLI 已安裝但無法取得版本資訊"
             fi
-            warn "請確認 ${cli_type} CLI 已完成登入認證（本工具不處理登入）"
+            echo ""
+            echo -e "  ${YELLOW}┌─────────────────────────────────────────────────────┐${NC}"
+            echo -e "  ${YELLOW}│${NC} ⚠️  請確認 ${cli_type} CLI 已完成登入認證               ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}│${NC}    本工具不處理登入，請先手動執行 ${cli_type}            ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}│${NC}    確認可正常互動後再啟動                           ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}└─────────────────────────────────────────────────────┘${NC}"
+            echo ""
         else
             error "${cli_type} CLI 未安裝"
             errors=$((errors + 1))
