@@ -86,7 +86,9 @@ do_validate() {
 
         # 檢查 TELEGRAM_BOT_TOKEN
         local token
-        token=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$SCRIPT_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
+        set +o pipefail
+        token=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
+        set -o pipefail
         if [ -z "$token" ] || [ "$token" = "your_bot_token_here" ]; then
             error "$MSG_TOKEN_NOT_SET"
             errors=$((errors + 1))
@@ -434,7 +436,7 @@ do_status() {
         local uptime
         uptime=$(ps -o etime= -p "$pid" 2>/dev/null | xargs)
         if [ -n "$uptime" ]; then
-            echo "$(printf "$MSG_UPTIME" "$uptime")"
+            printf "$MSG_UPTIME\n" "$uptime"
         fi
     else
         error "$MSG_BOT_NOT_RUNNING"
@@ -466,10 +468,10 @@ except Exception:
     if [ -n "$session_info" ]; then
         while IFS=: read -r tmux_name session_name; do
             if tmux has-session -t "$tmux_name" 2>/dev/null; then
-                echo "$(printf "$MSG_TMUX_SESSION_ACTIVE" "$tmux_name" "$session_name")"
+                printf "$MSG_TMUX_SESSION_ACTIVE\n" "$tmux_name" "$session_name"
                 has_active=true
             else
-                echo "$(printf "$MSG_TMUX_SESSION_INACTIVE" "$tmux_name" "$session_name")"
+                printf "$MSG_TMUX_SESSION_INACTIVE\n" "$tmux_name" "$session_name"
             fi
         done <<< "$session_info"
     fi
@@ -529,7 +531,7 @@ do_logs() {
 usage() {
     echo "$MSG_USAGE_TITLE"
     echo ""
-    echo "$(printf "$MSG_USAGE_LINE" "$(basename "$0")")"
+    printf "$MSG_USAGE_LINE\n" "$(basename "$0")"
     echo ""
     echo "$MSG_USAGE_COMMANDS"
     echo "$MSG_USAGE_START"
@@ -540,9 +542,9 @@ usage() {
     echo "$MSG_USAGE_VALIDATE"
     echo ""
     echo "$MSG_USAGE_EXAMPLES"
-    echo "$(printf "$MSG_USAGE_EXAMPLE_START" "$(basename "$0")")"
-    echo "$(printf "$MSG_USAGE_EXAMPLE_LOGS" "$(basename "$0")")"
-    echo "$(printf "$MSG_USAGE_EXAMPLE_STATUS" "$(basename "$0")")"
+    printf "$MSG_USAGE_EXAMPLE_START\n" "$(basename "$0")"
+    printf "$MSG_USAGE_EXAMPLE_LOGS\n" "$(basename "$0")"
+    printf "$MSG_USAGE_EXAMPLE_STATUS\n" "$(basename "$0")"
 }
 
 # === 主程式 ===

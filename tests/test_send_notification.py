@@ -103,7 +103,7 @@ class TestSendTelegramNotification:
         actual_message = mock_send.call_args[0][2]
         assert len(actual_message) < 5000
         assert actual_message.startswith("x" * 4000)
-        assert "_[Message truncated]_" in actual_message
+        assert "訊息已截斷" in actual_message
 
     @patch('send_telegram_notification.time.sleep')
     @patch('send_telegram_notification.requests.post')

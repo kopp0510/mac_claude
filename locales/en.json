@@ -127,6 +127,10 @@
     "unsupported_cli": "Unsupported CLI type: {cli_type} (supported: {supported})"
   },
   "notification": {
-    "markdown_fallback": "Markdown parse failed, retrying with plain text"
+    "markdown_fallback": "Markdown parse failed, retrying with plain text",
+    "token_not_found": "TELEGRAM_BOT_TOKEN not found in .env",
+    "no_user_ids": "No ALLOWED_USER_IDS configured",
+    "invalid_chat_id": "Invalid chat_id '{chat_id}': not a valid integer",
+    "message_truncated": "_[Message truncated]_"
   }
 }

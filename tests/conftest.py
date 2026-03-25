@@ -11,6 +11,15 @@ import tempfile
 # 添加專案根目錄到 Python 路徑
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import i18n
+
+
+@pytest.fixture(autouse=True)
+def _reset_i18n():
+    """每個測試後恢復 i18n 為預設語言，避免測試間狀態污染"""
+    yield
+    i18n.init('zh-TW')
+
 
 @pytest.fixture
 def temp_dir():

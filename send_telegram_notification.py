@@ -42,27 +42,24 @@ def send_telegram_message(session_name: str, message: str) -> bool:
     # Load environment variables
     load_dotenv()
 
-    import i18n
-    i18n.init()
-
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     allowed_users = os.getenv('ALLOWED_USER_IDS', '')
 
     if not bot_token:
-        logger.error("TELEGRAM_BOT_TOKEN not found in .env")
+        logger.error(t('notification.token_not_found'))
         return False
 
     # Get the first allowed user ID as the default chat ID
     chat_ids = [uid.strip() for uid in allowed_users.split(',') if uid.strip()]
 
     if not chat_ids:
-        logger.error("No ALLOWED_USER_IDS configured")
+        logger.error(t('notification.no_user_ids'))
         return False
 
     # Truncate message if too long (Telegram limit is 4096)
     truncated_message = message
     if len(message) > MAX_MESSAGE_LENGTH:
-        truncated_message = message[:MAX_MESSAGE_LENGTH] + "\n\n_[Message truncated]_"
+        truncated_message = message[:MAX_MESSAGE_LENGTH] + "\n\n" + t('notification.message_truncated')
 
     # Send to all allowed users
     success = True
@@ -90,7 +87,7 @@ def send_to_chat(bot_token: str, chat_id: str, message: str) -> bool:
     try:
         numeric_chat_id = int(chat_id)
     except ValueError:
-        logger.error(f"Invalid chat_id '{chat_id}': not a valid integer")
+        logger.error(t('notification.invalid_chat_id', chat_id=chat_id))
         return False
 
     payload = {

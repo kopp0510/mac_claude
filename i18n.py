@@ -5,14 +5,19 @@
 """
 
 import json
+import logging
 import os
+import threading
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_LANGUAGES = ['zh-TW', 'en']
 DEFAULT_LANGUAGE = 'zh-TW'
 
 _translations: dict = {}
 _current_language: str = DEFAULT_LANGUAGE
+_lock = threading.Lock()
 
 
 def init(language: str = None):
@@ -21,6 +26,7 @@ def init(language: str = None):
 
     lang = language or os.getenv('LANGUAGE', DEFAULT_LANGUAGE)
     if lang not in SUPPORTED_LANGUAGES:
+        logger.warning(f"不支援的語言 '{lang}'，使用預設 '{DEFAULT_LANGUAGE}'")
         lang = DEFAULT_LANGUAGE
 
     _current_language = lang
@@ -42,16 +48,17 @@ def t(key: str, **kwargs) -> str:
         翻譯後的字串，key 不存在時回傳 key 本身
     """
     if not _translations:
-        init()
+        with _lock:
+            if not _translations:
+                init()
 
     value = _translations
     for part in key.split('.'):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
+        if not isinstance(value, dict):
             return key
+        value = value.get(part)
 
-    if value is None or not isinstance(value, str):
+    if not isinstance(value, str):
         return key
 
     if kwargs:

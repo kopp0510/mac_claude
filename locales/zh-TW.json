@@ -127,6 +127,10 @@
     "unsupported_cli": "不支援的 CLI 類型: {cli_type}（支援: {supported}）"
   },
   "notification": {
-    "markdown_fallback": "Markdown 解析失敗，改用純文字重發"
+    "markdown_fallback": "Markdown 解析失敗，改用純文字重發",
+    "token_not_found": "TELEGRAM_BOT_TOKEN 未在 .env 中設定",
+    "no_user_ids": "未配置 ALLOWED_USER_IDS",
+    "invalid_chat_id": "無效的 chat_id '{chat_id}'：不是有效整數",
+    "message_truncated": "_[訊息已截斷]_"
   }
 }
