@@ -13,7 +13,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 - 🖥️ **Concurrent Access**: Interact with Claude Code from both terminal and Telegram at the same time
 - 🤖 **Hook-Based Notifications**: Instant push when AI CLI finishes responding via hooks (Claude: Stop, Gemini: AfterAgent), latency < 1 second
 - 🎯 **Interactive Buttons**: Confirmation prompts are automatically converted to Inline Keyboard buttons
-- 📊 **Chunked Messages**: Long messages are automatically split; extra-long content is uploaded as files
+- 📊 **Message Truncation**: Messages over 4000 characters are automatically truncated
 - 🔒 **User Authentication**: Only authorized users can access the bot
 - ⚡ **Message Queue**: Sequential processing to avoid conflicts
 
