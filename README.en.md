@@ -16,6 +16,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 - 📊 **Message Truncation**: Messages over 4000 characters are automatically truncated
 - 🔒 **User Authentication**: Only authorized users can access the bot
 - ⚡ **Message Queue**: Sequential processing to avoid conflicts
+- 🌐 **Multi-Language**: Switch between Traditional Chinese and English via `LANGUAGE` in `.env`
 
 ## Support Matrix
 
@@ -63,6 +64,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 | Log Rotation | Auto-truncate logs over 10MB to 5MB |
 | Hot Reload | `/reload` updates config without interrupting existing sessions |
 | Markdown Fallback | Auto-retry with plain text when Markdown parsing fails |
+| Multi-Language | Supports Traditional Chinese (zh-TW) and English (en) via `.env` |
 
 ## System Architecture
 
@@ -273,11 +275,13 @@ sessions:
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ALLOWED_USER_IDS=user_id_1,user_id_2
+LANGUAGE=zh-TW
 ```
 
 **Variables:**
 - `TELEGRAM_BOT_TOKEN` - Required, obtained from BotFather
 - `ALLOWED_USER_IDS` - Required, comma-separated user IDs (bot refuses to start if empty)
+- `LANGUAGE` - Optional, UI language (`zh-TW` Traditional Chinese / `en` English, default `zh-TW`)
 
 ## How It Works
 
@@ -316,6 +320,11 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 **Hook Notifications:**
 - `notify_telegram.sh` - CLI Hook script (Claude: Stop, Gemini: AfterAgent)
 - `send_telegram_notification.py` - Telegram API sender
+
+**Internationalization:**
+- `i18n.py` - Multi-language translation module
+- `locales/zh-TW.json` / `locales/en.json` - Python translation files
+- `locales/zh-TW.sh` / `locales/en.sh` - Shell translation files
 
 **Launch & Configuration:**
 - `bridge.sh` - Unified management tool (start/stop/restart/status/logs/validate)

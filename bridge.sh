@@ -12,6 +12,28 @@ PID_FILE="${BRIDGE_DIR}/bridge.pid"
 BOT_LOG="${LOG_DIR}/bot.log"
 VENV_DIR="${SCRIPT_DIR}/venv"
 
+# === 語言載入 ===
+load_language() {
+    local lang="zh-TW"
+    if [ -f "$SCRIPT_DIR/.env" ]; then
+        local env_lang
+        # 暫時關閉 pipefail，避免 grep 找不到 LANGUAGE 時退出
+        set +o pipefail
+        env_lang=$(grep -E '^LANGUAGE=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
+        set -o pipefail
+        [ -n "$env_lang" ] && lang="$env_lang"
+    fi
+
+    local lang_file="$SCRIPT_DIR/locales/${lang}.sh"
+    if [ -f "$lang_file" ]; then
+        source "$lang_file"
+    else
+        source "$SCRIPT_DIR/locales/zh-TW.sh"
+    fi
+}
+
+load_language
+
 # === 顏色輸出 ===
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -47,7 +69,7 @@ is_running() {
 
 # === 配置驗證 ===
 do_validate() {
-    echo "🔍 驗證配置..."
+    echo "$MSG_VALIDATING"
     echo ""
 
     local errors=0
@@ -60,25 +82,36 @@ do_validate() {
 
     # 1. .env 存在
     if [ -f "$SCRIPT_DIR/.env" ]; then
-        info ".env 文件存在"
+        info "$MSG_ENV_EXISTS"
 
         # 檢查 TELEGRAM_BOT_TOKEN
         local token
         token=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$SCRIPT_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")
         if [ -z "$token" ] || [ "$token" = "your_bot_token_here" ]; then
-            error "TELEGRAM_BOT_TOKEN 未設置或為佔位符"
+            error "$MSG_TOKEN_NOT_SET"
             errors=$((errors + 1))
         else
-            info "TELEGRAM_BOT_TOKEN 已設置"
+            info "$MSG_TOKEN_SET"
+        fi
+
+        # 檢查 LANGUAGE
+        set +o pipefail
+        local lang_val
+        lang_val=$(grep -E '^LANGUAGE=' "$SCRIPT_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
+        set -o pipefail
+        if [ -z "$lang_val" ]; then
+            warn "$MSG_LANGUAGE_NOT_SET"
+        else
+            info "$(printf "$MSG_LANGUAGE_SET" "$lang_val")"
         fi
     else
-        error ".env 文件不存在（請執行: cp .env.example .env）"
+        error "$MSG_ENV_NOT_EXISTS"
         errors=$((errors + 1))
     fi
 
     # 2. sessions.yaml 存在且有效
     if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
-        info "sessions.yaml 存在"
+        info "$MSG_SESSIONS_EXISTS"
 
         # 檢查是否有配置的會話
         local session_count
@@ -95,9 +128,9 @@ except Exception as e:
 " 2>/dev/null)
 
         if [ "$session_count" -gt 0 ] 2>/dev/null; then
-            info "找到 ${session_count} 個會話配置"
+            info "$(printf "$MSG_SESSIONS_FOUND" "$session_count")"
         else
-            error "sessions.yaml 中沒有有效的會話配置"
+            error "$MSG_SESSIONS_EMPTY"
             errors=$((errors + 1))
         fi
 
@@ -119,22 +152,22 @@ for s in (c.get('sessions', []) if c else []):
 
         while IFS=: read -r status name path; do
             if [ "$status" = "OK" ]; then
-                info "會話 #${name} 路徑存在: ${path}"
+                info "$(printf "$MSG_SESSION_PATH_OK" "$name" "$path")"
             else
-                error "會話 #${name} 路徑不存在: ${path}"
+                error "$(printf "$MSG_SESSION_PATH_FAIL" "$name" "$path")"
                 errors=$((errors + 1))
             fi
         done <<< "$path_results"
     else
-        error "sessions.yaml 不存在（請執行: cp sessions.yaml.example sessions.yaml）"
+        error "$MSG_SESSIONS_NOT_EXISTS"
         errors=$((errors + 1))
     fi
 
     # 3. tmux 已安裝
     if command -v tmux &>/dev/null; then
-        info "tmux 已安裝: $(tmux -V)"
+        info "$(printf "$MSG_TMUX_INSTALLED" "$(tmux -V)")"
     else
-        error "tmux 未安裝（請執行: brew install tmux）"
+        error "$MSG_TMUX_NOT_INSTALLED"
         errors=$((errors + 1))
     fi
 
@@ -157,65 +190,65 @@ except Exception:
     while IFS= read -r cli_type; do
         [ -z "$cli_type" ] && continue
         if command -v "$cli_type" &>/dev/null; then
-            info "${cli_type} CLI 已安裝"
+            info "$(printf "$MSG_CLI_INSTALLED" "$cli_type")"
             # 版本檢查確認 CLI 可正常執行
             cli_version=$("$cli_type" --version 2>/dev/null)
             if [ $? -eq 0 ] && [ -n "$cli_version" ]; then
-                info "${cli_type} CLI 版本: ${cli_version}"
+                info "$(printf "$MSG_CLI_VERSION" "$cli_type" "$cli_version")"
             else
-                warn "${cli_type} CLI 已安裝但無法取得版本資訊"
+                warn "$(printf "$MSG_CLI_NO_VERSION" "$cli_type")"
             fi
             echo ""
             echo -e "  ${YELLOW}┌─────────────────────────────────────────────────────┐${NC}"
-            echo -e "  ${YELLOW}│${NC} ⚠️  請確認 ${cli_type} CLI 已完成登入認證               ${YELLOW}│${NC}"
-            echo -e "  ${YELLOW}│${NC}    本工具不處理登入，請先手動執行 ${cli_type}            ${YELLOW}│${NC}"
-            echo -e "  ${YELLOW}│${NC}    確認可正常互動後再啟動                           ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}│${NC} $(printf "$MSG_CLI_LOGIN_NOTICE_LINE1" "$cli_type")               ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}│${NC}    $(printf "$MSG_CLI_LOGIN_NOTICE_LINE2" "$cli_type")            ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}│${NC}    $MSG_CLI_LOGIN_NOTICE_LINE3                           ${YELLOW}│${NC}"
             echo -e "  ${YELLOW}└─────────────────────────────────────────────────────┘${NC}"
             echo ""
         else
-            error "${cli_type} CLI 未安裝"
+            error "$(printf "$MSG_CLI_NOT_INSTALLED" "$cli_type")"
             errors=$((errors + 1))
         fi
     done <<< "$cli_types"
 
     # 5. 腳本權限
     if [ -x "$SCRIPT_DIR/notify_telegram.sh" ]; then
-        info "notify_telegram.sh 可執行"
+        info "$MSG_NOTIFY_EXECUTABLE"
     else
-        warn "notify_telegram.sh 不可執行（將自動修正）"
+        warn "$MSG_NOTIFY_NOT_EXECUTABLE"
     fi
 
     if [ -x "$SCRIPT_DIR/send_telegram_notification.py" ]; then
-        info "send_telegram_notification.py 可執行"
+        info "$MSG_SEND_EXECUTABLE"
     else
-        warn "send_telegram_notification.py 不可執行（將自動修正）"
+        warn "$MSG_SEND_NOT_EXECUTABLE"
     fi
 
     # 6. Python 依賴
     if [ -d "$VENV_DIR" ]; then
-        info "虛擬環境存在"
+        info "$MSG_VENV_EXISTS"
         if "$VENV_DIR/bin/python3" -c "import telegram; import yaml; import requests" 2>/dev/null; then
-            info "Python 依賴已安裝"
+            info "$MSG_DEPS_INSTALLED"
         else
-            warn "Python 依賴不完整（啟動時會自動安裝）"
+            warn "$MSG_DEPS_INCOMPLETE"
         fi
     else
-        warn "虛擬環境不存在（啟動時會自動創建）"
+        warn "$MSG_VENV_NOT_EXISTS"
     fi
 
     # 7. 日誌目錄
     if [ -d "$LOG_DIR" ]; then
-        info "日誌目錄存在: ${LOG_DIR}"
+        info "$(printf "$MSG_LOG_DIR_EXISTS" "$LOG_DIR")"
     else
-        info "日誌目錄將在啟動時創建: ${LOG_DIR}"
+        info "$(printf "$MSG_LOG_DIR_WILL_CREATE" "$LOG_DIR")"
     fi
 
     echo ""
     if [ "$errors" -gt 0 ]; then
-        error "發現 ${errors} 個問題，請修正後再啟動"
+        error "$(printf "$MSG_VALIDATE_ERRORS" "$errors")"
         return 1
     else
-        info "所有檢查通過"
+        info "$MSG_VALIDATE_OK"
         return 0
     fi
 }
@@ -225,36 +258,36 @@ do_start() {
     if is_running; then
         local pid
         pid=$(get_pid)
-        warn "Bot 已在運行中 (PID: ${pid})"
+        warn "$(printf "$MSG_ALREADY_RUNNING" "$pid")"
         return 1
     fi
 
-    step "驗證配置..."
+    step "$MSG_STEP_VALIDATE"
     if ! do_validate; then
         return 1
     fi
 
     echo ""
-    step "初始化環境..."
+    step "$MSG_STEP_INIT"
 
     # 遷移舊目錄（一次性）
     if [ -d "$HOME/.claude_bridge" ] && [ ! -d "$HOME/.ai_bridge" ]; then
         mv "$HOME/.claude_bridge" "$HOME/.ai_bridge"
-        info "已遷移 ~/.claude_bridge → ~/.ai_bridge"
+        info "$MSG_MIGRATED"
     fi
 
     init_dirs
 
     # 確保虛擬環境存在
     if [ ! -d "$VENV_DIR" ]; then
-        step "創建虛擬環境..."
+        step "$MSG_STEP_CREATE_VENV"
         python3 -m venv "$VENV_DIR"
     fi
 
     # 啟動虛擬環境並安裝依賴
     source "$VENV_DIR/bin/activate"
     if ! python3 -c "import telegram; import yaml; import requests" 2>/dev/null; then
-        step "安裝 Python 依賴..."
+        step "$MSG_STEP_INSTALL_DEPS"
         pip3 install -q -r "$SCRIPT_DIR/requirements.txt"
     fi
 
@@ -268,7 +301,7 @@ do_start() {
     set +a
 
     # 後台啟動 bot
-    step "啟動 Bot（後台模式）..."
+    step "$MSG_STEP_START_BOT"
     cd "$SCRIPT_DIR"
     nohup "$VENV_DIR/bin/python3" telegram_bot_multi.py >> "$BOT_LOG" 2>&1 &
     local pid=$!
@@ -278,12 +311,12 @@ do_start() {
     sleep 2
     if kill -0 "$pid" 2>/dev/null; then
         echo ""
-        info "Bot 已啟動 (PID: ${pid})"
-        info "日誌: ${BOT_LOG}"
-        info "使用 './bridge.sh status' 查看狀態"
-        info "使用 './bridge.sh stop' 停止"
+        info "$(printf "$MSG_BOT_STARTED" "$pid")"
+        info "$(printf "$MSG_BOT_LOG" "$BOT_LOG")"
+        info "$MSG_BOT_STATUS_HINT"
+        info "$MSG_BOT_STOP_HINT"
     else
-        error "Bot 啟動失敗，查看日誌: ${BOT_LOG}"
+        error "$(printf "$MSG_BOT_START_FAILED" "$BOT_LOG")"
         rm -f "$PID_FILE"
         tail -20 "$BOT_LOG" 2>/dev/null
         return 1
@@ -293,7 +326,7 @@ do_start() {
 # === 停止 ===
 do_stop() {
     if ! is_running; then
-        warn "Bot 未在運行"
+        warn "$MSG_NOT_RUNNING"
         # 清理可能殘留的 PID 檔案
         rm -f "$PID_FILE"
         # 仍然嘗試清理 tmux 會話
@@ -304,7 +337,7 @@ do_stop() {
     local pid
     pid=$(get_pid)
 
-    step "停止 Bot (PID: ${pid})..."
+    step "$(printf "$MSG_STEP_STOP" "$pid")"
 
     # 發送 SIGTERM
     kill "$pid" 2>/dev/null
@@ -318,7 +351,7 @@ do_stop() {
 
     # 如果還沒退出，強制終止
     if kill -0 "$pid" 2>/dev/null; then
-        warn "進程未回應 SIGTERM，強制終止..."
+        warn "$MSG_FORCE_KILL"
         kill -9 "$pid" 2>/dev/null
         sleep 1
     fi
@@ -330,11 +363,11 @@ do_stop() {
     cleanup_tmux
 
     # 清理日誌
-    step "清理日誌..."
+    step "$MSG_STEP_CLEANUP_LOGS"
     find "$LOG_DIR" -name "*_*.log" -delete 2>/dev/null
     find "$LOG_DIR" -name "hook_debug_*.log" -delete 2>/dev/null
 
-    info "Bot 已停止"
+    info "$MSG_BOT_STOPPED"
 }
 
 # === 獲取配置的 tmux 會話名稱列表 ===
@@ -368,18 +401,18 @@ cleanup_tmux() {
         return
     fi
 
-    step "清理 tmux 會話..."
+    step "$MSG_STEP_CLEANUP_TMUX"
     while IFS= read -r session; do
         if tmux has-session -t "$session" 2>/dev/null; then
             tmux kill-session -t "$session" 2>/dev/null && \
-                info "已終止: ${session}" || true
+                info "$(printf "$MSG_TMUX_KILLED" "$session")" || true
         fi
     done <<< "$configured"
 }
 
 # === 重啟 ===
 do_restart() {
-    step "重啟 Bot..."
+    step "$MSG_STEP_RESTART"
     do_stop
     echo ""
     sleep 1
@@ -388,29 +421,29 @@ do_restart() {
 
 # === 狀態 ===
 do_status() {
-    echo "📊 AI Bridge 狀態"
+    echo "$MSG_STATUS_TITLE"
     echo ""
 
     # Bot 進程狀態
     if is_running; then
         local pid
         pid=$(get_pid)
-        info "Bot 運行中 (PID: ${pid})"
+        info "$(printf "$MSG_BOT_RUNNING" "$pid")"
 
         # 顯示運行時間
         local uptime
         uptime=$(ps -o etime= -p "$pid" 2>/dev/null | xargs)
         if [ -n "$uptime" ]; then
-            echo "   運行時間: ${uptime}"
+            echo "$(printf "$MSG_UPTIME" "$uptime")"
         fi
     else
-        error "Bot 未運行"
+        error "$MSG_BOT_NOT_RUNNING"
     fi
 
     echo ""
 
     # tmux 會話狀態
-    echo "🖥️  tmux 會話:"
+    echo "$MSG_TMUX_SESSIONS_TITLE"
     local session_info has_active=false
     local PYTHON="python3"
     [ -x "$VENV_DIR/bin/python3" ] && PYTHON="$VENV_DIR/bin/python3"
@@ -433,21 +466,21 @@ except Exception:
     if [ -n "$session_info" ]; then
         while IFS=: read -r tmux_name session_name; do
             if tmux has-session -t "$tmux_name" 2>/dev/null; then
-                echo "   ✅ ${tmux_name}（運行中）  ← logs: ${session_name}"
+                echo "$(printf "$MSG_TMUX_SESSION_ACTIVE" "$tmux_name" "$session_name")"
                 has_active=true
             else
-                echo "   ❌ ${tmux_name}（未啟動）  ← logs: ${session_name}"
+                echo "$(printf "$MSG_TMUX_SESSION_INACTIVE" "$tmux_name" "$session_name")"
             fi
         done <<< "$session_info"
     fi
     if [ "$has_active" = false ]; then
-        echo "   （無活躍的會話）"
+        echo "$MSG_NO_ACTIVE_SESSIONS"
     fi
 
     echo ""
 
     # 日誌文件
-    echo "📁 日誌文件:"
+    echo "$MSG_LOG_FILES_TITLE"
     if [ -d "$LOG_DIR" ]; then
         local log_files
         log_files=$(ls -la "$LOG_DIR"/*.log 2>/dev/null || true)
@@ -456,10 +489,10 @@ except Exception:
                 echo "   ${line}"
             done <<< "$log_files"
         else
-            echo "   （無日誌文件）"
+            echo "$MSG_NO_LOG_FILES"
         fi
     else
-        echo "   （日誌目錄不存在）"
+        echo "$MSG_NO_LOG_DIR"
     fi
 }
 
@@ -470,10 +503,10 @@ do_logs() {
     if [ -z "$session" ]; then
         # 查看 bot 主日誌
         if [ -f "$BOT_LOG" ]; then
-            step "查看 Bot 日誌: ${BOT_LOG}"
+            step "$(printf "$MSG_VIEWING_BOT_LOG" "$BOT_LOG")"
             tail -f "$BOT_LOG"
         else
-            error "Bot 日誌不存在: ${BOT_LOG}"
+            error "$(printf "$MSG_BOT_LOG_NOT_EXISTS" "$BOT_LOG")"
         fi
     else
         # 查看指定會話日誌
@@ -482,34 +515,34 @@ do_logs() {
         local session_log
         session_log=$(ls "$LOG_DIR"/*_"${session}".log 2>/dev/null | head -1)
         if [ -n "$session_log" ] && [ -f "$session_log" ]; then
-            step "查看會話日誌: ${session_log}"
+            step "$(printf "$MSG_VIEWING_SESSION_LOG" "$session_log")"
             tail -f "$session_log"
         else
-            error "會話日誌不存在: *_${session}.log"
-            echo "可用的日誌:"
-            ls "$LOG_DIR"/*_*.log 2>/dev/null || echo "  （無）"
+            error "$(printf "$MSG_SESSION_LOG_NOT_EXISTS" "$session")"
+            echo "$MSG_AVAILABLE_LOGS"
+            ls "$LOG_DIR"/*_*.log 2>/dev/null || echo "$MSG_NO_LOGS"
         fi
     fi
 }
 
 # === 使用說明 ===
 usage() {
-    echo "AI CLI Telegram Bridge 管理工具"
+    echo "$MSG_USAGE_TITLE"
     echo ""
-    echo "用法: $(basename "$0") <命令> [參數]"
+    echo "$(printf "$MSG_USAGE_LINE" "$(basename "$0")")"
     echo ""
-    echo "命令:"
-    echo "  start       後台啟動 Bot"
-    echo "  stop        停止 Bot 並清理 tmux 會話"
-    echo "  restart     重啟 Bot"
-    echo "  status      查看運行狀態"
-    echo "  logs [會話] 查看日誌（預設為 Bot 日誌）"
-    echo "  validate    驗證配置"
+    echo "$MSG_USAGE_COMMANDS"
+    echo "$MSG_USAGE_START"
+    echo "$MSG_USAGE_STOP"
+    echo "$MSG_USAGE_RESTART"
+    echo "$MSG_USAGE_STATUS"
+    echo "$MSG_USAGE_LOGS"
+    echo "$MSG_USAGE_VALIDATE"
     echo ""
-    echo "範例:"
-    echo "  $(basename "$0") start"
-    echo "  $(basename "$0") logs webapp"
-    echo "  $(basename "$0") status"
+    echo "$MSG_USAGE_EXAMPLES"
+    echo "$(printf "$MSG_USAGE_EXAMPLE_START" "$(basename "$0")")"
+    echo "$(printf "$MSG_USAGE_EXAMPLE_LOGS" "$(basename "$0")")"
+    echo "$(printf "$MSG_USAGE_EXAMPLE_STATUS" "$(basename "$0")")"
 }
 
 # === 主程式 ===

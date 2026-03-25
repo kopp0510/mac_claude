@@ -16,6 +16,7 @@
 - 📊 **訊息截斷**：超過 4000 字元自動截斷，避免訊息過長
 - 🔒 **用戶驗證**：僅允許特定用戶使用
 - ⚡ **訊息佇列**：避免衝突，訊息依序處理
+- 🌐 **多語言支援**：透過 `.env` 的 `LANGUAGE` 設定切換繁體中文或英文介面
 
 ## 支援列表
 
@@ -63,6 +64,7 @@
 | 日誌輪替 | 超過 10MB 自動截斷至 5MB |
 | 熱重載 | `/reload` 更新配置，不中斷現有會話 |
 | Markdown fallback | 格式解析失敗自動改用純文字 |
+| 多語言支援 | 支援繁體中文（zh-TW）和英文（en），透過 `.env` 切換 |
 
 ## 系統架構
 
@@ -272,11 +274,13 @@ sessions:
 ```env
 TELEGRAM_BOT_TOKEN=你的_telegram_bot_token
 ALLOWED_USER_IDS=user_id_1,user_id_2
+LANGUAGE=zh-TW
 ```
 
 **變數說明：**
 - `TELEGRAM_BOT_TOKEN` - 必填，從 BotFather 獲取
 - `ALLOWED_USER_IDS` - 必填，逗號分隔的用戶 ID（留空將拒絕啟動）
+- `LANGUAGE` - 可選，介面語言（`zh-TW` 繁體中文 / `en` 英文，預設 `zh-TW`）
 
 ## 工作原理
 
@@ -315,6 +319,11 @@ ALLOWED_USER_IDS=user_id_1,user_id_2
 **Hook 通知：**
 - `notify_telegram.sh` - CLI Hook 腳本（Claude: Stop, Gemini: AfterAgent）
 - `send_telegram_notification.py` - Telegram API 發送器
+
+**國際化：**
+- `i18n.py` - 多語言翻譯模組
+- `locales/zh-TW.json` / `locales/en.json` - Python 翻譯檔
+- `locales/zh-TW.sh` / `locales/en.sh` - Shell 翻譯檔
 
 **啟動與配置：**
 - `bridge.sh` - 統一管理工具（start/stop/restart/status/logs/validate）

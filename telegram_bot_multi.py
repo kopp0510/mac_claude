@@ -23,6 +23,7 @@ from collections import defaultdict
 from session_manager import SessionManager
 from message_router import MessageRouter
 from config import config as app_config
+from i18n import t
 
 # 載入環境變數
 try:
@@ -97,7 +98,7 @@ def check_rate_limit(user_id: int) -> bool:
     """檢查用戶是否超過速率限制"""
     now = time.time()
     timestamps = _rate_limit_store[user_id]
-    _rate_limit_store[user_id] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+    _rate_limit_store[user_id] = [ts for ts in timestamps if now - ts < RATE_LIMIT_WINDOW]
     if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
         return False
     _rate_limit_store[user_id].append(now)
@@ -107,23 +108,23 @@ def check_rate_limit(user_id: int) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 /start 命令"""
     if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
+        await update.message.reply_text(t('bot.unauthorized'))
         return
 
     bot_state.telegram_chat_id = update.effective_chat.id
 
-    sessions_list = bot_state.message_router.format_session_list() if bot_state.message_router else "尚未初始化"
+    sessions_list = bot_state.message_router.format_session_list() if bot_state.message_router else t('start_cmd.not_initialized')
 
-    welcome_message = f"""🤖 AI CLI 多會話橋接 Bot
+    welcome_message = f"""{t('start_cmd.title')}
 
 {sessions_list}
 
-可用命令：
-/start - 顯示此幫助訊息
-/status - 查看所有會話狀態
-/sessions - 查看會話列表
-/restart #session - 重啟指定會話
-/reload - 重新載入 sessions.yaml 配置
+{t('start_cmd.commands_header')}
+{t('start_cmd.cmd_start')}
+{t('start_cmd.cmd_status')}
+{t('start_cmd.cmd_sessions')}
+{t('start_cmd.cmd_restart')}
+{t('start_cmd.cmd_reload')}
 """
 
     await update.message.reply_text(welcome_message)
@@ -132,22 +133,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看所有會話狀態"""
     if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
+        await update.message.reply_text(t('bot.unauthorized'))
         return
 
     status_info = bot_state.session_manager.get_status()
 
-    lines = ["📊 會話狀態\n"]
+    lines = [t('status_cmd.title') + "\n"]
     for name, info in status_info.items():
         status_emoji = "✅" if info['exists'] else "❌"
         lines.append(f"{status_emoji} #{name}")
-        lines.append(f"   路徑: {info['path']}")
+        lines.append(f"   {t('status_cmd.path')}: {info['path']}")
         lines.append(f"   tmux: {info['tmux_session']}")
         lines.append(f"   CLI: {info.get('cli_type', 'claude')}")
         if info.get('cli_args'):
-            lines.append(f"   參數: {info['cli_args']}")
-        lines.append(f"   狀態: {'運行中' if info['exists'] else '未啟動'}")
-        lines.append(f"   通知: Hook 驅動\n")
+            lines.append(f"   {t('status_cmd.args')}: {info['cli_args']}")
+        lines.append(f"   {t('status_cmd.state')}: {t('status_cmd.running') if info['exists'] else t('status_cmd.stopped')}")
+        lines.append(f"   {t('status_cmd.notification')}: {t('status_cmd.hook_driven')}\n")
 
     await update.message.reply_text('\n'.join(lines))
 
@@ -155,48 +156,48 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def sessions_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看會話列表"""
     if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
+        await update.message.reply_text(t('bot.unauthorized'))
         return
 
-    sessions_text = bot_state.message_router.format_session_list() if bot_state.message_router else "❌ 系統未初始化"
+    sessions_text = bot_state.message_router.format_session_list() if bot_state.message_router else t('session.not_initialized')
     await update.message.reply_text(sessions_text)
 
 
 async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """重啟指定會話"""
     if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
+        await update.message.reply_text(t('bot.unauthorized'))
         return
 
     if not context.args:
-        await update.message.reply_text("❌ 請指定會話名稱，例如: /restart #webapp")
+        await update.message.reply_text(t('session.specify_name'))
         return
 
     session_name = context.args[0].replace('#', '').replace('@', '')
 
     # 檢查會話是否存在
     if not bot_state.session_manager.get_session(session_name):
-        await update.message.reply_text(f"❌ 會話不存在: #{session_name}")
+        await update.message.reply_text(t('session.not_found', name=session_name))
         return
 
-    await update.message.reply_text(f"🔄 正在重啟會話 #{session_name}...")
+    await update.message.reply_text(t('session.restarting', name=session_name))
 
     # 重啟會話
     success = bot_state.session_manager.restart_session(session_name)
 
     if success:
-        await update.message.reply_text(f"✅ #{session_name} 已成功重啟")
+        await update.message.reply_text(t('session.restart_success', name=session_name))
     else:
-        await update.message.reply_text(f"❌ #{session_name} 重啟失敗，請查看日誌")
+        await update.message.reply_text(t('session.restart_failure', name=session_name))
 
 
 async def reload_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """重新載入配置文件"""
     if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
+        await update.message.reply_text(t('bot.unauthorized'))
         return
 
-    await update.message.reply_text("🔄 正在重載配置...")
+    await update.message.reply_text(t('reload.reloading'))
 
     # 執行重載
     success, message, changes = reload_sessions_config()
@@ -205,11 +206,11 @@ async def reload_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 格式化變更詳情
         details = []
         if changes.get('added'):
-            details.append(f"➕ 新增: {', '.join(['#' + s for s in changes['added']])}")
+            details.append(t('reload.added_label', sessions=', '.join(['#' + s for s in changes['added']])))
         if changes.get('removed'):
-            details.append(f"➖ 移除: {', '.join(['#' + s for s in changes['removed']])}")
+            details.append(t('reload.removed_label', sessions=', '.join(['#' + s for s in changes['removed']])))
         if changes.get('kept'):
-            details.append(f"✅ 保留: {', '.join(['#' + s for s in changes['kept']])}")
+            details.append(t('reload.kept_label', sessions=', '.join(['#' + s for s in changes['kept']])))
 
         full_message = message
         if details:
@@ -223,11 +224,11 @@ async def reload_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理用戶訊息"""
     if not check_user_permission(update):
-        await update.message.reply_text("❌ 未授權的用戶")
+        await update.message.reply_text(t('bot.unauthorized'))
         return
 
     if not check_rate_limit(update.effective_user.id):
-        await update.message.reply_text("⏳ 發送過於頻繁，請稍後再試")
+        await update.message.reply_text(t('bot.rate_limited'))
         return
 
     bot_state.telegram_chat_id = update.effective_chat.id
@@ -236,7 +237,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 驗證訊息長度
     if len(user_message) > app_config.security.MAX_MESSAGE_LENGTH:
-        await update.message.reply_text(f"❌ 訊息過長（最大 {app_config.security.MAX_MESSAGE_LENGTH} 字元）")
+        await update.message.reply_text(t('bot.message_too_long', max_length=app_config.security.MAX_MESSAGE_LENGTH))
         return
 
     # 路由訊息
@@ -252,14 +253,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             bot_state.message_queue.put_nowait((session_name, actual_message))
         except queue.Full:
-            await update.message.reply_text("⚠️ 訊息佇列已滿，請稍後再試")
+            await update.message.reply_text(t('bot.queue_full'))
             return
 
     # 發送確認
     if len(routes) == 1:
-        confirm_text = f"✅ 已發送給 #{routes[0][0]}"
+        confirm_text = t('session.sent_single', name=routes[0][0])
     else:
-        confirm_text = f"✅ 已發送給 {len(routes)} 個會話"
+        confirm_text = t('session.sent_multiple', count=len(routes))
 
     await update.message.reply_text(confirm_text)
 
@@ -271,7 +272,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = str(update.effective_user.id)
     if ALLOWED_USER_IDS and user_id not in ALLOWED_USER_IDS:
-        await query.edit_message_text("❌ 未授權的用戶")
+        await query.edit_message_text(t('bot.unauthorized'))
         return
 
     # 解析回調數據: choice_{session}:{num}
@@ -290,13 +291,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_state.message_queue.put_nowait((session_name, choice))
     except queue.Full:
         await query.edit_message_text(
-            text=f"{query.message.text}\n\n⚠️ 佇列已滿，請稍後再試",
+            text=f"{query.message.text}\n\n{t('callback.queue_full')}",
             reply_markup=None
         )
         return
 
     await query.edit_message_text(
-        text=f"{query.message.text}\n\n✅ [#{session_name}] 已選擇: {choice}",
+        text=f"{query.message.text}\n\n{t('callback.selected', session=session_name, choice=choice)}",
         reply_markup=None
     )
 
@@ -308,7 +309,7 @@ def message_queue_processor():
             item = bot_state.message_queue.get(timeout=app_config.queue.QUEUE_TIMEOUT)
             session_name, message = item
 
-            logger.info(f"[#{session_name}] 處理訊息: {message[:50]}...")
+            logger.info(t('bridge.queue_processing', session=session_name, preview=message[:50]))
 
             # 發送到對應會話
             bot_state.session_manager.send_to_session(session_name, message)
@@ -318,7 +319,7 @@ def message_queue_processor():
         except queue.Empty:
             continue
         except Exception as e:
-            logger.error(f"處理佇列訊息時錯誤: {e}")
+            logger.error(t('bridge.queue_error', error=e))
 
 
 def load_sessions_config():
@@ -330,7 +331,7 @@ def load_sessions_config():
             config = yaml.safe_load(f)
 
         if not config or 'sessions' not in config:
-            logger.error(f"❌ 配置文件格式錯誤: {SESSIONS_CONFIG_FILE}")
+            logger.error(t('bridge.config_error', file=SESSIONS_CONFIG_FILE))
             sys.exit(1)
 
         for session in config['sessions']:
@@ -342,13 +343,13 @@ def load_sessions_config():
 
             session_manager.add_session(name, path, tmux, cli_args, cli_type)
 
-        logger.info(f"✅ 載入 {len(config['sessions'])} 個會話配置")
+        logger.info(t('bridge.config_loaded', count=len(config['sessions'])))
 
     except FileNotFoundError:
-        logger.error(f"❌ 找不到配置文件: {SESSIONS_CONFIG_FILE}")
+        logger.error(t('bridge.config_not_found', file=SESSIONS_CONFIG_FILE))
         sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ 載入配置失敗: {e}")
+        logger.error(t('bridge.config_load_failed', error=e))
         sys.exit(1)
 
     # 更新全域狀態
@@ -363,7 +364,7 @@ def reload_sessions_config():
             new_config = yaml.safe_load(f)
 
         if not new_config or 'sessions' not in new_config:
-            return False, f"配置文件格式錯誤: {SESSIONS_CONFIG_FILE}", {}
+            return False, t('bridge.config_format_error', file=SESSIONS_CONFIG_FILE), {}
 
         old_sessions = set(bot_state.session_manager.get_all_sessions())
         new_sessions_config = {s['name']: s for s in new_config['sessions']}
@@ -379,11 +380,11 @@ def reload_sessions_config():
             'kept': list(kept)
         }
 
-        logger.info(f"🔄 重載配置: 新增 {len(added)}, 移除 {len(removed)}, 保留 {len(kept)}")
+        logger.info(t('reload.log_summary', added=len(added), removed=len(removed), kept=len(kept)))
 
         # 終止被移除會話的 tmux
         for name in removed:
-            logger.info(f"  停止會話: {name}")
+            logger.info(t('reload.stop_session', name=name))
             bot_state.session_manager.kill_session(name)
 
         # 創建新的 SessionManager
@@ -400,7 +401,7 @@ def reload_sessions_config():
 
             # 新增的會話，創建 tmux 會話
             if name in added:
-                logger.info(f"  新增會話: {name}")
+                logger.info(t('reload.add_session', name=name))
                 bridge = new_manager.get_bridge(name)
                 if not bridge.session_exists():
                     bridge.create_session(work_dir=path,
@@ -411,14 +412,14 @@ def reload_sessions_config():
         bot_state.update_session_manager(new_manager)
         bot_state.update_message_router(MessageRouter(new_manager))
 
-        message = f"✅ 配置已重載\n新增: {len(added)}\n移除: {len(removed)}\n保留: {len(kept)}"
+        message = t('reload.success', added=len(added), removed=len(removed), kept=len(kept))
         return True, message, changes
 
     except FileNotFoundError:
-        return False, f"找不到配置文件: {SESSIONS_CONFIG_FILE}", {}
+        return False, t('reload.file_not_found', file=SESSIONS_CONFIG_FILE), {}
     except Exception as e:
-        logger.error(f"❌ 重載配置失敗: {e}")
-        return False, f"重載失敗: {str(e)}", {}
+        logger.error(t('bridge.reload_config_error', error=e))
+        return False, t('reload.failed', error=str(e)), {}
 
 
 def log_rotation_worker():
@@ -434,7 +435,7 @@ def log_rotation_worker():
                     if log_file.stat().st_size > app_config.tmux.LOG_MAX_SIZE:
                         data = log_file.read_bytes()[-app_config.tmux.LOG_KEEP_SIZE:]
                         log_file.write_bytes(data)
-                        logger.info(f"日誌已截斷: {log_file.name}")
+                        logger.info(t('bridge.log_truncated', name=log_file.name))
                 except Exception:
                     pass
         except Exception:
@@ -443,14 +444,14 @@ def log_rotation_worker():
 
 def setup_bridge():
     """設置橋接"""
-    logger.info("🔧 設置橋接...")
+    logger.info(t('bridge.setup'))
 
     # 載入配置
     load_sessions_config()
 
     # 創建所有 tmux 會話
     if not bot_state.session_manager.create_all_sessions():
-        logger.error("❌ 創建會話失敗")
+        logger.error(t('bridge.create_failed'))
         sys.exit(1)
 
     # 啟動訊息佇列處理執行緒
@@ -461,17 +462,20 @@ def setup_bridge():
     rotation_thread = threading.Thread(target=log_rotation_worker, daemon=True)
     rotation_thread.start()
 
-    logger.info("✅ 橋接設置完成（Hook 驅動通知）")
+    logger.info(t('bridge.setup_complete'))
 
 
 def main():
     """主程式"""
+    import i18n
+    i18n.init()
+
     if not TELEGRAM_BOT_TOKEN:
-        logger.error("❌ 請設置 TELEGRAM_BOT_TOKEN 環境變數")
+        logger.error(t('bot.missing_token'))
         sys.exit(1)
 
     if not ALLOWED_USER_IDS:
-        logger.critical("❌ ALLOWED_USER_IDS 未設定，拒絕啟動（安全防護：防止任何人控制 bot）")
+        logger.critical(t('bot.missing_user_ids'))
         sys.exit(1)
 
     # 設置橋接
@@ -494,16 +498,16 @@ def main():
     bot_state.telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # 啟動 Bot
-    logger.info("🚀 Telegram Bot 已啟動")
-    logger.info(f"📝 配置文件: {SESSIONS_CONFIG_FILE}")
-    logger.info(f"🖥️  會話數量: {len(bot_state.session_manager.get_all_sessions())}")
-    logger.info("📡 通知方式: Hook 驅動（即時）")
+    logger.info(t('bot.started'))
+    logger.info(t('bot.config_file', file=SESSIONS_CONFIG_FILE))
+    logger.info(t('bot.session_count', count=len(bot_state.session_manager.get_all_sessions())))
+    logger.info(t('bot.notification_mode'))
 
     # 設置 signal handler（支援後台優雅停止）
     def shutdown_handler(signum, frame):
         sig_name = signal.Signals(signum).name
-        logger.info(f"🛑 收到 {sig_name}，正在關閉...")
-        logger.info("👋 已關閉")
+        logger.info(t('bot.shutdown_signal', signal=sig_name))
+        logger.info(t('bot.shutdown_complete'))
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, shutdown_handler)
@@ -512,8 +516,8 @@ def main():
     try:
         bot_state.telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
     except KeyboardInterrupt:
-        logger.info("\n🛑 正在關閉...")
-        logger.info("👋 已關閉")
+        logger.info(t('bot.shutting_down'))
+        logger.info(t('bot.shutdown_complete'))
 
 
 if __name__ == '__main__':

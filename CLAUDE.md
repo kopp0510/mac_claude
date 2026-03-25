@@ -19,7 +19,7 @@
 python3 telegram_bot_multi.py
 
 # 測試
-pytest                     # 執行所有測試（~150 個）
+pytest                     # 執行所有測試（~166 個）
 pytest --cov               # 含覆蓋率
 
 # 配置
@@ -56,6 +56,7 @@ sessions:
 ```env
 TELEGRAM_BOT_TOKEN=...       # 必填，從 @BotFather 獲取
 ALLOWED_USER_IDS=123,456     # 必填，逗號分隔（空白拒絕啟動）
+LANGUAGE=zh-TW               # 可選：zh-TW（預設）或 en
 ```
 
 ## 架構
@@ -71,6 +72,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - **Hook 驅動通知**：hooks 由 `CliProvider.configure_hooks()` 自動配置到專案目錄
 - **單向佇列**：Telegram → CLI 用 `queue.Queue`，CLI → Telegram 完全由 hook 處理
 - **Gemini 特殊處理**：需要 extra Enter 送出、auto-trust folder、hook stdout 必須是 JSON
+- **i18n 多語言**：`i18n.py` 模組 + `locales/` JSON/Shell 翻譯檔，透過 `.env` 的 `LANGUAGE` 切換語言（zh-TW / en）
 
 ## 新增 Telegram 命令
 
@@ -106,7 +108,19 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - `shlex.quote()` 防護 shell 注入
 - ALLOWED_USER_IDS 為必填，空白拒絕啟動
 - 每用戶速率限制：5 秒內最多 3 則
+- **翻譯檔**：`locales/zh-TW.json` + `locales/en.json`（Python 用）、`locales/zh-TW.sh` + `locales/en.sh`（Shell 用）。新增字串需同時更新兩個語言檔
 - **登入由使用者自行處理**：本專案僅負責 Telegram ↔ CLI 的訊息轉發，不處理 Claude Code 或 Gemini CLI 的登入/認證。使用前須確保 CLI 已完成登入（`claude` / `gemini` 可正常執行）
+
+### i18n 開發注意事項
+- 所有使用者可見字串用 `t('module.key', var=value)` — 不要硬編碼中文或英文
+- `send_telegram_notification.py` 被 hook 獨立調用，需自行 `i18n.init()`（不共享 bot 的初始化）
+- Python 中避免用 `t` 作為迴圈變數名（與 `from i18n import t` 衝突）
+- `.env` 新增設定時，需在 `bridge.sh` 的 `do_validate()` 加入檢查並提醒使用者
+
+### bridge.sh 注意事項
+- 腳本使用 `set -euo pipefail`，`grep` 找不到結果時會返回非零退出碼導致腳本退出
+- 需要 grep 可能無結果的場景，用 `set +o pipefail` / `set -o pipefail` 包裹
+- Shell 翻譯變數含 `%s` 佔位符，使用時搭配 `printf`：`info "$(printf "$MSG_VAR" "$val")"`
 
 ## 故障排除
 

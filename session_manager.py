@@ -7,6 +7,7 @@ import logging
 from typing import Dict, List, Optional
 from tmux_bridge import TmuxBridge
 from cli_provider import CliProvider, ClaudeProvider, create_provider
+from i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class SessionManager:
                             cli_provider=provider)
         self.bridges[name] = bridge
 
-        logger.info(f"✅ 添加會話: {name} @ {path} (CLI: {cli_type})")
+        logger.info(t('session.added', name=name, path=path, cli_type=cli_type))
 
     def get_session(self, name: str) -> Optional[SessionConfig]:
         """獲取會話配置"""
@@ -79,14 +80,14 @@ class SessionManager:
             bridge = self.bridges[name]
 
             if not bridge.session_exists():
-                logger.info(f"📝 創建會話: {name}")
+                logger.info(t('session.creating', name=name))
                 if not bridge.create_session(work_dir=config.path,
                                              session_alias=name,
                                              cli_args=config.cli_args):
-                    logger.error(f"❌ 創建會話失敗: {name}")
+                    logger.error(t('session.create_failed', name=name))
                     success = False
             else:
-                logger.info(f"✅ 會話已存在: {name}")
+                logger.info(t('session.already_exists', name=name))
 
         return success
 
@@ -94,7 +95,7 @@ class SessionManager:
         """發送訊息到指定會話"""
         bridge = self.bridges.get(name)
         if not bridge:
-            logger.error(f"❌ 找不到會話: {name}")
+            logger.error(t('session.send_not_found', name=name))
             return False
 
         return bridge.send_command(message)
@@ -141,24 +142,24 @@ class SessionManager:
         bridge = self.bridges.get(name)
 
         if not config or not bridge:
-            logger.error(f"❌ 找不到會話: {name}")
+            logger.error(t('session.send_not_found', name=name))
             return False
 
-        logger.info(f"🔄 重啟會話: {name}")
+        logger.info(t('session.restart_log', name=name))
 
         # 終止舊會話
         if bridge.session_exists():
-            logger.info(f"  終止舊會話: {config.tmux_session}")
+            logger.info(t('session.kill_old', tmux=config.tmux_session))
             bridge.kill_session()
 
         # 創建新會話
-        logger.info(f"  創建新會話: {config.tmux_session}")
+        logger.info(t('session.create_new', tmux=config.tmux_session))
         if bridge.create_session(work_dir=config.path, session_alias=name,
                                  cli_args=config.cli_args):
-            logger.info(f"✅ 會話重啟成功: {name}")
+            logger.info(t('session.restart_success_log', name=name))
             return True
         else:
-            logger.error(f"❌ 會話重啟失敗: {name}")
+            logger.error(t('session.restart_failed_log', name=name))
             return False
 
 

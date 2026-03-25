@@ -14,6 +14,7 @@ from typing import Optional, Dict, Any
 
 from config import config
 from cli_provider import CliProvider, ClaudeProvider
+from i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class TmuxBridge:
 
             return True
         except Exception as e:
-            logger.error(f"創建日誌文件失敗: {e}")
+            logger.error(t('tmux.log_create_failed', error=e))
             return False
 
     def create_session(self, work_dir: Optional[str] = None,
@@ -91,17 +92,17 @@ class TmuxBridge:
             bool: 是否成功
         """
         if not self.check_tmux_installed():
-            logger.error("tmux 未安裝。請執行: brew install tmux")
-            raise Exception("tmux 未安裝。請執行: brew install tmux")
+            logger.error(t('tmux.not_installed'))
+            raise Exception(t('tmux.not_installed'))
 
         if self.session_exists():
-            logger.warning(f"tmux 會話 '{self.session_name}' 已存在")
+            logger.warning(t('tmux.session_exists', name=self.session_name))
             return True
 
         try:
             # 創建日誌文件（安全權限）
             if not self._create_log_file():
-                logger.warning("創建日誌文件失敗，繼續執行...")
+                logger.warning(t('tmux.log_create_warn'))
 
             # 創建 tmux 會話（detached 模式）
             cmd = ['tmux', 'new-session', '-d', '-s', self.session_name]
@@ -111,7 +112,7 @@ class TmuxBridge:
 
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
-                logger.error(f"創建 tmux 會話失敗: {result.stderr}")
+                logger.error(t('tmux.create_failed', error=result.stderr))
                 return False
 
             # 啟動日誌記錄
@@ -121,7 +122,7 @@ class TmuxBridge:
             ], capture_output=True, text=True)
 
             if result.returncode != 0:
-                logger.warning(f"啟動日誌記錄失敗: {result.stderr}")
+                logger.warning(t('tmux.log_start_failed', error=result.stderr))
 
             # 配置 CLI hooks
             script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -137,13 +138,13 @@ class TmuxBridge:
             cli_cmd = self.cli_provider.build_launch_command(cli_args)
             self.send_command(cli_cmd)
 
-            logger.info(f"tmux 會話 '{self.session_name}' 已創建")
-            logger.info(f"日誌文件: {self.log_file}")
+            logger.info(t('tmux.session_created', name=self.session_name))
+            logger.info(t('tmux.log_file', path=self.log_file))
 
             return True
 
         except Exception as e:
-            logger.error(f"創建會話時發生錯誤: {e}")
+            logger.error(t('tmux.create_error', error=e))
             return False
 
     def _run_tmux(self, args: list, error_msg: str) -> bool:
@@ -173,19 +174,19 @@ class TmuxBridge:
     def send_command(self, command: str) -> bool:
         """發送命令到 tmux 會話（自動按 Enter）"""
         if not self.session_exists():
-            logger.error(f"tmux 會話 '{self.session_name}' 不存在")
+            logger.error(t('tmux.session_not_exists', name=self.session_name))
             return False
 
         # 使用 -l 發送字面文字，避免特殊字元被解釋
         if not self._run_tmux(
             ['send-keys', '-t', self.session_name, '-l', command],
-            "發送命令失敗"
+            t('tmux.send_cmd_failed')
         ):
             return False
 
         if not self._run_tmux(
             ['send-keys', '-t', self.session_name, 'Enter'],
-            "發送 Enter 失敗"
+            t('tmux.send_enter_failed')
         ):
             return False
 
@@ -193,7 +194,7 @@ class TmuxBridge:
         if self.cli_provider.extra_enter:
             if not self._run_tmux(
                 ['send-keys', '-t', self.session_name, 'Enter'],
-                "發送額外 Enter 失敗"
+                t('tmux.send_extra_enter_failed')
             ):
                 return False
 
@@ -202,12 +203,12 @@ class TmuxBridge:
     def send_text(self, text: str) -> bool:
         """發送文字到 tmux 會話（不自動按 Enter）"""
         if not self.session_exists():
-            logger.error(f"tmux 會話 '{self.session_name}' 不存在")
+            logger.error(t('tmux.session_not_exists', name=self.session_name))
             return False
 
         return self._run_tmux(
             ['send-keys', '-t', self.session_name, '-l', text],
-            "發送文字失敗"
+            t('tmux.send_text_failed')
         )
 
     def read_new_output(self) -> str:
@@ -234,7 +235,7 @@ class TmuxBridge:
                 return new_content
 
         except Exception as e:
-            logger.error(f"讀取日誌失敗: {e}")
+            logger.error(t('tmux.read_log_failed', error=e))
             return ""
 
     def get_full_output(self) -> str:
@@ -251,20 +252,20 @@ class TmuxBridge:
             with open(self.log_file, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
         except Exception as e:
-            logger.error(f"讀取日誌失敗: {e}")
+            logger.error(t('tmux.read_log_failed', error=e))
             return ""
 
     def attach_session(self) -> bool:
         """附加到 tmux 會話（進入互動模式）"""
         if not self.session_exists():
-            logger.error(f"tmux 會話 '{self.session_name}' 不存在")
+            logger.error(t('tmux.session_not_exists', name=self.session_name))
             return False
 
         try:
             subprocess.run(['tmux', 'attach-session', '-t', self.session_name])
             return True
         except Exception as e:
-            logger.error(f"附加會話失敗: {e}")
+            logger.error(t('tmux.attach_failed', error=e))
             return False
 
     def kill_session(self) -> bool:
@@ -274,18 +275,18 @@ class TmuxBridge:
 
         if not self._run_tmux(
             ['kill-session', '-t', self.session_name],
-            "終止會話失敗"
+            t('tmux.kill_failed')
         ):
             return False
 
-        logger.info(f"tmux 會話 '{self.session_name}' 已終止")
+        logger.info(t('tmux.session_killed', name=self.session_name))
 
         # 安全地清理日誌文件
         if os.path.exists(self.log_file):
             try:
                 os.remove(self.log_file)
             except Exception as e:
-                logger.warning(f"清理日誌文件失敗: {e}")
+                logger.warning(t('tmux.log_cleanup_failed', error=e))
 
         return True
 

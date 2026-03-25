@@ -11,6 +11,7 @@ import logging
 import requests
 from requests.exceptions import RequestException, Timeout, ConnectionError as ReqConnectionError
 from dotenv import load_dotenv
+from i18n import t
 
 # 設置日誌
 logging.basicConfig(
@@ -40,6 +41,9 @@ def send_telegram_message(session_name: str, message: str) -> bool:
     """
     # Load environment variables
     load_dotenv()
+
+    import i18n
+    i18n.init()
 
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     allowed_users = os.getenv('ALLOWED_USER_IDS', '')
@@ -120,7 +124,7 @@ def send_to_chat(bot_token: str, chat_id: str, message: str) -> bool:
 
             if error_code == 400 and 'parse entities' in error_description.lower():
                 # Markdown 解析失敗，fallback 為純文字重發
-                logger.warning(f"Markdown 解析失敗，改用純文字重發")
+                logger.warning(t('notification.markdown_fallback'))
                 payload_plain = dict(payload)
                 del payload_plain['parse_mode']
                 try:

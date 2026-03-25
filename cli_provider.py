@@ -11,6 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Protocol, Optional
 
+from i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,7 +118,7 @@ class ClaudeProvider:
                     with open(settings_file, 'r', encoding='utf-8') as f:
                         existing_settings = json.load(f)
                 except Exception as e:
-                    logger.warning(f"讀取現有設定失敗: {e}")
+                    logger.warning(t('provider.hooks_read_failed', error=e))
 
             # 合併 hooks 配置
             if 'hooks' not in existing_settings:
@@ -127,11 +129,11 @@ class ClaudeProvider:
             with open(settings_file, 'w', encoding='utf-8') as f:
                 json.dump(existing_settings, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"已配置 Claude Code hooks: {session_name}")
+            logger.info(t('provider.hooks_configured_claude', name=session_name))
             return True
 
         except Exception as e:
-            logger.warning(f"配置 hooks 失敗: {e}")
+            logger.warning(t('provider.hooks_config_failed', error=e))
             return False
 
 
@@ -203,7 +205,7 @@ class GeminiProvider:
                     with open(settings_file, 'r', encoding='utf-8') as f:
                         existing_settings = json.load(f)
                 except Exception as e:
-                    logger.warning(f"讀取現有設定失敗: {e}")
+                    logger.warning(t('provider.hooks_read_failed', error=e))
 
             # 合併 hooks 配置
             if 'hooks' not in existing_settings:
@@ -214,7 +216,7 @@ class GeminiProvider:
             with open(settings_file, 'w', encoding='utf-8') as f:
                 json.dump(existing_settings, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"已配置 Gemini CLI hooks: {session_name}")
+            logger.info(t('provider.hooks_configured_gemini', name=session_name))
 
             # 自動信任專案目錄（否則 Gemini CLI 不會載入 hooks）
             self._trust_folder(work_dir)
@@ -222,7 +224,7 @@ class GeminiProvider:
             return True
 
         except Exception as e:
-            logger.warning(f"配置 hooks 失敗: {e}")
+            logger.warning(t('provider.hooks_config_failed', error=e))
             return False
 
     @staticmethod
@@ -243,9 +245,9 @@ class GeminiProvider:
             with open(trusted_file, 'w', encoding='utf-8') as f:
                 json.dump(trusted, f, indent=2, ensure_ascii=False)
 
-            logger.info(f"已信任 Gemini 專案目錄: {abs_path}")
+            logger.info(t('provider.folder_trusted', path=abs_path))
         except Exception as e:
-            logger.warning(f"設定目錄信任失敗: {e}")
+            logger.warning(t('provider.folder_trust_failed', error=e))
 
 
 # 已註冊的 CLI 提供者
@@ -260,5 +262,5 @@ def create_provider(cli_type: str) -> CliProvider:
     provider_class = _PROVIDERS.get(cli_type)
     if provider_class is None:
         supported = ', '.join(_PROVIDERS.keys())
-        raise ValueError(f"不支援的 CLI 類型: {cli_type}（支援: {supported}）")
+        raise ValueError(t('provider.unsupported_cli', cli_type=cli_type, supported=supported))
     return provider_class()

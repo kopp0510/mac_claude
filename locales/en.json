@@ -1,0 +1,132 @@
+{
+  "bot": {
+    "unauthorized": "❌ Unauthorized user",
+    "rate_limited": "⏳ Too many messages, please wait",
+    "message_too_long": "❌ Message too long (max {max_length} characters)",
+    "queue_full": "⚠️ Message queue is full, please try again later",
+    "started": "🚀 Telegram Bot started",
+    "config_file": "📝 Config file: {file}",
+    "session_count": "🖥️  Sessions: {count}",
+    "notification_mode": "📡 Notification: Hook-driven (instant)",
+    "shutting_down": "\n🛑 Shutting down...",
+    "shutdown_signal": "🛑 Received {signal}, shutting down...",
+    "shutdown_complete": "👋 Shutdown complete",
+    "missing_token": "❌ Please set TELEGRAM_BOT_TOKEN environment variable",
+    "missing_user_ids": "❌ ALLOWED_USER_IDS not set, refusing to start (security: prevents unauthorized bot control)"
+  },
+  "start_cmd": {
+    "title": "🤖 AI CLI Multi-Session Bridge Bot",
+    "not_initialized": "Not initialized",
+    "commands_header": "Available commands:",
+    "cmd_start": "/start - Show this help message",
+    "cmd_status": "/status - View all session status",
+    "cmd_sessions": "/sessions - View session list",
+    "cmd_restart": "/restart #session - Restart a session",
+    "cmd_reload": "/reload - Reload sessions.yaml config"
+  },
+  "status_cmd": {
+    "title": "📊 Session Status",
+    "path": "Path",
+    "args": "Args",
+    "state": "State",
+    "running": "Running",
+    "stopped": "Stopped",
+    "notification": "Notification",
+    "hook_driven": "Hook-driven"
+  },
+  "session": {
+    "not_found": "❌ Session not found: #{name}",
+    "specify_name": "❌ Please specify a session name, e.g.: /restart #webapp",
+    "restarting": "🔄 Restarting session #{name}...",
+    "restart_success": "✅ #{name} restarted successfully",
+    "restart_failure": "❌ #{name} restart failed, check logs",
+    "sent_single": "✅ Sent to #{name}",
+    "sent_multiple": "✅ Sent to {count} sessions",
+    "not_initialized": "❌ System not initialized",
+    "added": "✅ Added session: {name} @ {path} (CLI: {cli_type})",
+    "creating": "📝 Creating session: {name}",
+    "create_failed": "❌ Failed to create session: {name}",
+    "already_exists": "✅ Session already exists: {name}",
+    "send_not_found": "❌ Session not found: {name}",
+    "restart_log": "🔄 Restarting session: {name}",
+    "kill_old": "  Killing old session: {tmux}",
+    "create_new": "  Creating new session: {tmux}",
+    "restart_success_log": "✅ Session restarted: {name}",
+    "restart_failed_log": "❌ Session restart failed: {name}"
+  },
+  "reload": {
+    "reloading": "🔄 Reloading config...",
+    "success": "✅ Config reloaded\nAdded: {added}\nRemoved: {removed}\nKept: {kept}",
+    "added_label": "➕ Added: {sessions}",
+    "removed_label": "➖ Removed: {sessions}",
+    "kept_label": "✅ Kept: {sessions}",
+    "file_not_found": "Config file not found: {file}",
+    "failed": "Reload failed: {error}",
+    "log_summary": "🔄 Config reload: added {added}, removed {removed}, kept {kept}",
+    "stop_session": "  Stopping session: {name}",
+    "add_session": "  Adding session: {name}"
+  },
+  "router": {
+    "session_not_found": "Session not found: {name}",
+    "no_sessions": "No sessions available",
+    "no_target": "❌ Please specify a target session\n\nAvailable sessions: {session_list}\n\nExample: #{example} your message",
+    "no_sessions_configured": "No sessions configured",
+    "available_sessions": "📋 Available sessions:",
+    "path_label": "Path",
+    "usage_header": "\n💡 Usage:",
+    "usage_single": "• #{name} your message  → Send to {name} session",
+    "usage_all": "• #all your message     → Send to all sessions",
+    "separator": ", "
+  },
+  "callback": {
+    "queue_full": "⚠️ Queue is full, please try again later",
+    "selected": "✅ [#{session}] Selected: {choice}"
+  },
+  "bridge": {
+    "setup": "🔧 Setting up bridge...",
+    "setup_complete": "✅ Bridge setup complete (Hook-driven notifications)",
+    "create_failed": "❌ Failed to create sessions",
+    "config_error": "❌ Invalid config format: {file}",
+    "config_not_found": "❌ Config file not found: {file}",
+    "config_load_failed": "❌ Failed to load config: {error}",
+    "config_loaded": "✅ Loaded {count} session configs",
+    "reload_config_error": "❌ Config reload failed: {error}",
+    "config_format_error": "Invalid config format: {file}",
+    "queue_error": "Error processing queue message: {error}",
+    "queue_processing": "[#{session}] Processing: {preview}...",
+    "log_truncated": "Log truncated: {name}"
+  },
+  "tmux": {
+    "not_installed": "tmux is not installed. Please run: brew install tmux",
+    "session_exists": "tmux session '{name}' already exists",
+    "create_failed": "Failed to create tmux session: {error}",
+    "log_start_failed": "Failed to start logging: {error}",
+    "log_create_failed": "Failed to create log file: {error}",
+    "log_create_warn": "Failed to create log file, continuing...",
+    "session_created": "tmux session '{name}' created",
+    "log_file": "Log file: {path}",
+    "create_error": "Error creating session: {error}",
+    "session_not_exists": "tmux session '{name}' does not exist",
+    "send_cmd_failed": "Failed to send command",
+    "send_enter_failed": "Failed to send Enter",
+    "send_extra_enter_failed": "Failed to send extra Enter",
+    "send_text_failed": "Failed to send text",
+    "read_log_failed": "Failed to read log: {error}",
+    "attach_failed": "Failed to attach session: {error}",
+    "kill_failed": "Failed to kill session",
+    "session_killed": "tmux session '{name}' terminated",
+    "log_cleanup_failed": "Failed to clean up log file: {error}"
+  },
+  "provider": {
+    "hooks_configured_claude": "Configured Claude Code hooks: {name}",
+    "hooks_configured_gemini": "Configured Gemini CLI hooks: {name}",
+    "hooks_read_failed": "Failed to read existing settings: {error}",
+    "hooks_config_failed": "Failed to configure hooks: {error}",
+    "folder_trusted": "Trusted Gemini project directory: {path}",
+    "folder_trust_failed": "Failed to set directory trust: {error}",
+    "unsupported_cli": "Unsupported CLI type: {cli_type} (supported: {supported})"
+  },
+  "notification": {
+    "markdown_fallback": "Markdown parse failed, retrying with plain text"
+  }
+}

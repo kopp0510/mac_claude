@@ -1,0 +1,132 @@
+{
+  "bot": {
+    "unauthorized": "❌ 未授權的用戶",
+    "rate_limited": "⏳ 發送過於頻繁，請稍後再試",
+    "message_too_long": "❌ 訊息過長（最大 {max_length} 字元）",
+    "queue_full": "⚠️ 訊息佇列已滿，請稍後再試",
+    "started": "🚀 Telegram Bot 已啟動",
+    "config_file": "📝 配置文件: {file}",
+    "session_count": "🖥️  會話數量: {count}",
+    "notification_mode": "📡 通知方式: Hook 驅動（即時）",
+    "shutting_down": "\n🛑 正在關閉...",
+    "shutdown_signal": "🛑 收到 {signal}，正在關閉...",
+    "shutdown_complete": "👋 已關閉",
+    "missing_token": "❌ 請設置 TELEGRAM_BOT_TOKEN 環境變數",
+    "missing_user_ids": "❌ ALLOWED_USER_IDS 未設定，拒絕啟動（安全防護：防止任何人控制 bot）"
+  },
+  "start_cmd": {
+    "title": "🤖 AI CLI 多會話橋接 Bot",
+    "not_initialized": "尚未初始化",
+    "commands_header": "可用命令：",
+    "cmd_start": "/start - 顯示此幫助訊息",
+    "cmd_status": "/status - 查看所有會話狀態",
+    "cmd_sessions": "/sessions - 查看會話列表",
+    "cmd_restart": "/restart #session - 重啟指定會話",
+    "cmd_reload": "/reload - 重新載入 sessions.yaml 配置"
+  },
+  "status_cmd": {
+    "title": "📊 會話狀態",
+    "path": "路徑",
+    "args": "參數",
+    "state": "狀態",
+    "running": "運行中",
+    "stopped": "未啟動",
+    "notification": "通知",
+    "hook_driven": "Hook 驅動"
+  },
+  "session": {
+    "not_found": "❌ 會話不存在: #{name}",
+    "specify_name": "❌ 請指定會話名稱，例如: /restart #webapp",
+    "restarting": "🔄 正在重啟會話 #{name}...",
+    "restart_success": "✅ #{name} 已成功重啟",
+    "restart_failure": "❌ #{name} 重啟失敗，請查看日誌",
+    "sent_single": "✅ 已發送給 #{name}",
+    "sent_multiple": "✅ 已發送給 {count} 個會話",
+    "not_initialized": "❌ 系統未初始化",
+    "added": "✅ 添加會話: {name} @ {path} (CLI: {cli_type})",
+    "creating": "📝 創建會話: {name}",
+    "create_failed": "❌ 創建會話失敗: {name}",
+    "already_exists": "✅ 會話已存在: {name}",
+    "send_not_found": "❌ 找不到會話: {name}",
+    "restart_log": "🔄 重啟會話: {name}",
+    "kill_old": "  終止舊會話: {tmux}",
+    "create_new": "  創建新會話: {tmux}",
+    "restart_success_log": "✅ 會話重啟成功: {name}",
+    "restart_failed_log": "❌ 會話重啟失敗: {name}"
+  },
+  "reload": {
+    "reloading": "🔄 正在重載配置...",
+    "success": "✅ 配置已重載\n新增: {added}\n移除: {removed}\n保留: {kept}",
+    "added_label": "➕ 新增: {sessions}",
+    "removed_label": "➖ 移除: {sessions}",
+    "kept_label": "✅ 保留: {sessions}",
+    "file_not_found": "找不到配置文件: {file}",
+    "failed": "重載失敗: {error}",
+    "log_summary": "🔄 重載配置: 新增 {added}, 移除 {removed}, 保留 {kept}",
+    "stop_session": "  停止會話: {name}",
+    "add_session": "  新增會話: {name}"
+  },
+  "router": {
+    "session_not_found": "會話不存在: {name}",
+    "no_sessions": "沒有可用的會話",
+    "no_target": "❌ 請指定目標會話\n\n可用會話：{session_list}\n\n範例：#{example} 你的訊息",
+    "no_sessions_configured": "目前沒有配置任何會話",
+    "available_sessions": "📋 可用的會話：",
+    "path_label": "路徑",
+    "usage_header": "\n💡 使用方式：",
+    "usage_single": "• #{name} 你的訊息  → 發送給 {name} 會話",
+    "usage_all": "• #all 你的訊息     → 發送給所有會話",
+    "separator": "、"
+  },
+  "callback": {
+    "queue_full": "⚠️ 佇列已滿，請稍後再試",
+    "selected": "✅ [#{session}] 已選擇: {choice}"
+  },
+  "bridge": {
+    "setup": "🔧 設置橋接...",
+    "setup_complete": "✅ 橋接設置完成（Hook 驅動通知）",
+    "create_failed": "❌ 創建會話失敗",
+    "config_error": "❌ 配置文件格式錯誤: {file}",
+    "config_not_found": "❌ 找不到配置文件: {file}",
+    "config_load_failed": "❌ 載入配置失敗: {error}",
+    "config_loaded": "✅ 載入 {count} 個會話配置",
+    "reload_config_error": "❌ 重載配置失敗: {error}",
+    "config_format_error": "配置文件格式錯誤: {file}",
+    "queue_error": "處理佇列訊息時錯誤: {error}",
+    "queue_processing": "[#{session}] 處理訊息: {preview}...",
+    "log_truncated": "日誌已截斷: {name}"
+  },
+  "tmux": {
+    "not_installed": "tmux 未安裝。請執行: brew install tmux",
+    "session_exists": "tmux 會話 '{name}' 已存在",
+    "create_failed": "創建 tmux 會話失敗: {error}",
+    "log_start_failed": "啟動日誌記錄失敗: {error}",
+    "log_create_failed": "創建日誌文件失敗: {error}",
+    "log_create_warn": "創建日誌文件失敗，繼續執行...",
+    "session_created": "tmux 會話 '{name}' 已創建",
+    "log_file": "日誌文件: {path}",
+    "create_error": "創建會話時發生錯誤: {error}",
+    "session_not_exists": "tmux 會話 '{name}' 不存在",
+    "send_cmd_failed": "發送命令失敗",
+    "send_enter_failed": "發送 Enter 失敗",
+    "send_extra_enter_failed": "發送額外 Enter 失敗",
+    "send_text_failed": "發送文字失敗",
+    "read_log_failed": "讀取日誌失敗: {error}",
+    "attach_failed": "附加會話失敗: {error}",
+    "kill_failed": "終止會話失敗",
+    "session_killed": "tmux 會話 '{name}' 已終止",
+    "log_cleanup_failed": "清理日誌文件失敗: {error}"
+  },
+  "provider": {
+    "hooks_configured_claude": "已配置 Claude Code hooks: {name}",
+    "hooks_configured_gemini": "已配置 Gemini CLI hooks: {name}",
+    "hooks_read_failed": "讀取現有設定失敗: {error}",
+    "hooks_config_failed": "配置 hooks 失敗: {error}",
+    "folder_trusted": "已信任 Gemini 專案目錄: {path}",
+    "folder_trust_failed": "設定目錄信任失敗: {error}",
+    "unsupported_cli": "不支援的 CLI 類型: {cli_type}（支援: {supported}）"
+  },
+  "notification": {
+    "markdown_fallback": "Markdown 解析失敗，改用純文字重發"
+  }
+}

@@ -7,6 +7,7 @@ Message Router - 訊息路由器
 from typing import List, Tuple
 
 from config import patterns
+from i18n import t
 
 
 class MessageRouter:
@@ -47,16 +48,16 @@ class MessageRouter:
                 return [(session_name, actual_message)]
             else:
                 # 會話不存在，返回錯誤標記
-                return [('__error__', f'會話不存在: {session_name}')]
+                return [('__error__', t('router.session_not_found', name=session_name))]
 
         # 沒有指定會話，返回錯誤提示
         sessions = self.session_manager.get_all_sessions()
         if not sessions:
-            return [('__error__', '沒有可用的會話')]
+            return [('__error__', t('router.no_sessions'))]
 
         # 生成可用會話列表
-        session_list = '、'.join([f'#{name}' for name in sessions])
-        return [('__error__', f'❌ 請指定目標會話\n\n可用會話：{session_list}\n\n範例：#webapp 你的訊息')]
+        session_list = t('router.separator').join([f'#{name}' for name in sessions])
+        return [('__error__', t('router.no_target', session_list=session_list, example=sessions[0]))]
 
     def format_session_list(self) -> str:
         """
@@ -68,19 +69,19 @@ class MessageRouter:
         sessions = self.session_manager.get_all_sessions()
 
         if not sessions:
-            return "目前沒有配置任何會話"
+            return t('router.no_sessions_configured')
 
-        lines = ["📋 可用的會話：\n"]
+        lines = [t('router.available_sessions') + "\n"]
         for i, name in enumerate(sessions, 1):
             config = self.session_manager.get_session(name)
             lines.append(f"{i}. #{name}")
-            lines.append(f"   路徑: {config.path}")
+            lines.append(f"   {t('router.path_label')}: {config.path}")
             lines.append(f"   tmux: {config.tmux_session}\n")
 
         example_name = sessions[0]
-        lines.append("\n💡 使用方式：")
-        lines.append(f"• #{example_name} 你的訊息  → 發送給 {example_name} 會話")
-        lines.append("• #all 你的訊息     → 發送給所有會話")
+        lines.append(t('router.usage_header'))
+        lines.append(t('router.usage_single', name=example_name))
+        lines.append(t('router.usage_all'))
 
         return '\n'.join(lines)
 
