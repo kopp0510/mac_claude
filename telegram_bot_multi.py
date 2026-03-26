@@ -698,11 +698,13 @@ def interaction_polling_worker():
                 _poll_sent_hashes.add(options_hash)
                 _poll_last_sent[name] = now
 
-                # 組合標題
+                # 組合標題（Telegram API 限制 4096 字元）
                 header_parts = [f"📋 [#{name}]"]
                 if title:
                     header_parts.append(title)
                 header = '\n'.join(header_parts)
+                if len(header) > 4000:
+                    header = header[:4000] + "\n\n⋯"
 
                 # 組合 InlineKeyboard 並用 requests 直接呼叫 Telegram API
                 # （輪詢執行緒無法使用 async，故用同步 requests）

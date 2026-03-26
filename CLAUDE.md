@@ -85,7 +85,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 ### Claude Code Plan Mode 互動輪詢
 - Plan mode 期間的選項（AskUserQuestion、ExitPlanMode）透過 **tmux 日誌輪詢**偵測並推送為 Telegram InlineKeyboard 按鈕
 - `Stop` hook 不在 plan mode 期間觸發，改由 `interaction_polling_worker` 每 2 秒掃描 tmux 日誌尾部偵測選項
-- 文字輸入選項（「Tell Claude what to change」「Type something.」）標記為 ✏️，選擇後提示使用者發送 `#session 回饋內容`
+- 文字輸入選項（「Tell Claude what to change」「Type something」）標記為 ✏️，選擇後提示使用者發送 `#session 回饋內容`
 - 選項選擇透過 tmux 按鍵序列（Down × N + Enter），非文字輸入
 - 防重複：hash + 30 秒冷卻
 
