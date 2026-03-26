@@ -24,6 +24,9 @@ class TmuxConfig:
     SESSION_INIT_DELAY: float = 2.0 # 會話初始化等待時間（秒）
     COMMAND_DELAY: float = 1.0      # 命令間延遲（秒）
 
+    # 互動偵測輪詢
+    POLL_INTERVAL: float = 2.0      # 輪詢間隔（秒）
+
 
 @dataclass
 class QueueConfig:

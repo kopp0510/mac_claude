@@ -80,7 +80,8 @@
   },
   "callback": {
     "queue_full": "⚠️ 佇列已滿，請稍後再試",
-    "selected": "✅ [#{session}] 已選擇: {choice}"
+    "selected": "✅ [#{session}] 已選擇: {choice}",
+    "text_input_hint": "已選擇文字輸入模式。請發送 #{session} 你的回饋內容"
   },
   "bridge": {
     "setup": "🔧 設置橋接...",
@@ -132,5 +133,8 @@
     "no_user_ids": "未配置 ALLOWED_USER_IDS",
     "invalid_chat_id": "無效的 chat_id '{chat_id}'：不是有效整數",
     "message_truncated": "_[訊息已截斷]_"
+  },
+  "poll": {
+    "options_detected": "📋 [#{session}] 偵測到互動選項："
   }
 }

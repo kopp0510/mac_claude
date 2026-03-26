@@ -80,7 +80,8 @@
   },
   "callback": {
     "queue_full": "⚠️ Queue is full, please try again later",
-    "selected": "✅ [#{session}] Selected: {choice}"
+    "selected": "✅ [#{session}] Selected: {choice}",
+    "text_input_hint": "Text input mode selected. Please send #{session} your feedback"
   },
   "bridge": {
     "setup": "🔧 Setting up bridge...",
@@ -132,5 +133,8 @@
     "no_user_ids": "No ALLOWED_USER_IDS configured",
     "invalid_chat_id": "Invalid chat_id '{chat_id}': not a valid integer",
     "message_truncated": "_[Message truncated]_"
+  },
+  "poll": {
+    "options_detected": "📋 [#{session}] Interactive options detected:"
   }
 }

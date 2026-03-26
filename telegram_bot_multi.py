@@ -5,7 +5,9 @@ Telegram Bot - AI CLI 多會話並行橋接
 透過 Hook 機制即時接收 AI 回應
 """
 
+import json
 import os
+import subprocess
 import sys
 import signal
 import logging
@@ -16,13 +18,14 @@ from pathlib import Path
 import yaml
 from dataclasses import dataclass, field
 from typing import Optional
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 from collections import defaultdict
 from session_manager import SessionManager
 from message_router import MessageRouter
-from config import config as app_config
+import hashlib
+from config import config as app_config, patterns
 from i18n import t
 
 # 載入環境變數
@@ -275,13 +278,86 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(t('bot.unauthorized'))
         return
 
-    # 解析回調數據: choice_{session}:{num}
     data = query.data
+
+    # 文字輸入選項：input_{session}:{num}（選擇後提示使用者追加訊息）
+    if data.startswith('input_'):
+        payload = data[6:]  # 移除 'input_'
+        parts = payload.rsplit(':', 1)
+        if len(parts) != 2:
+            return
+
+        session_name, choice_num = parts
+        bridge = bot_state.session_manager.get_bridge(session_name) if bot_state.session_manager else None
+
+        if bridge and bridge.session_exists():
+            try:
+                num = int(choice_num)
+                tmux_session = bot_state.session_manager.get_session(session_name).tmux_session
+                for _ in range(num - 1):
+                    subprocess.run(
+                        ['tmux', 'send-keys', '-t', tmux_session, 'Down'],
+                        capture_output=True, text=True
+                    )
+                    time.sleep(0.1)
+                subprocess.run(
+                    ['tmux', 'send-keys', '-t', tmux_session, 'Enter'],
+                    capture_output=True, text=True
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send selection keys: {e}")
+
+        _poll_last_sent[session_name] = time.time()
+
+        await query.edit_message_text(
+            text=f"{query.message.text}\n\n✏️ {t('callback.text_input_hint', session=session_name)}",
+            reply_markup=None
+        )
+        return
+
+    # 互動輪詢選項：select_{session}:{num}（用 tmux 按鍵序列選擇）
+    if data.startswith('select_'):
+        payload = data[7:]  # 移除 'select_'
+        parts = payload.rsplit(':', 1)
+        if len(parts) != 2:
+            return
+
+        session_name, choice_num = parts
+        bridge = bot_state.session_manager.get_bridge(session_name) if bot_state.session_manager else None
+
+        if bridge and bridge.session_exists():
+            # 發送 Down arrow × (N-1) 次移到目標選項，再按 Enter
+            try:
+                num = int(choice_num)
+                tmux_session = bot_state.session_manager.get_session(session_name).tmux_session
+                for _ in range(num - 1):
+                    subprocess.run(
+                        ['tmux', 'send-keys', '-t', tmux_session, 'Down'],
+                        capture_output=True, text=True
+                    )
+                    time.sleep(0.1)
+                subprocess.run(
+                    ['tmux', 'send-keys', '-t', tmux_session, 'Enter'],
+                    capture_output=True, text=True
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send selection keys: {e}")
+
+        # 重設冷卻時間（等 Claude 處理完再偵測新選項）
+        _poll_last_sent[session_name] = time.time()
+
+        await query.edit_message_text(
+            text=f"{query.message.text}\n\n{t('callback.selected', session=session_name, choice=choice_num)}",
+            reply_markup=None
+        )
+        return
+
+    # 一般確認選項：choice_{session}:{num}（文字發送到佇列）
     if not data.startswith('choice_'):
         return
 
     payload = data[7:]  # 移除 'choice_'
-    parts = payload.rsplit(':', 1)  # 從右邊分割一次
+    parts = payload.rsplit(':', 1)
     if len(parts) != 2:
         return
 
@@ -295,6 +371,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=None
         )
         return
+
+    # 重設冷卻時間
+    _poll_last_sent[session_name] = time.time()
 
     await query.edit_message_text(
         text=f"{query.message.text}\n\n{t('callback.selected', session=session_name, choice=choice)}",
@@ -442,6 +521,180 @@ def log_rotation_worker():
             pass
 
 
+# 互動偵測輪詢狀態
+_poll_sent_hashes: set = set()  # 已推送選項的 hash，防重複
+_poll_last_sent: dict = {}  # {session_name: timestamp}，防短時間重複
+POLL_COOLDOWN = 30  # 同一 session 發送冷卻時間（秒）
+
+# 文字輸入選項的關鍵字（選擇後需要使用者追加輸入）
+TEXT_INPUT_KEYWORDS = ['Type something', 'Tell Claude what to change']
+
+
+def _clean_ansi(text: str) -> str:
+    """清理 ANSI escape codes 和控制字元"""
+    import re as _re
+    # 先把 cursor forward \x1b[NC] 替換為空格（TUI 用它代替空格）
+    text = _re.sub(r'\x1b\[(\d+)C', lambda m: ' ' * int(m.group(1)), text)
+    text = patterns.ANSI_ESCAPE.sub('', text)
+    text = patterns.CONTROL_CHARS.sub('', text)
+    return text
+
+
+def _extract_options(text: str) -> tuple:
+    """從清理後的文字尾部提取標題和選項行
+
+    Returns:
+        (title, options) — title 為選項前的提問文字，options 為 [(num, label), ...]
+    """
+    lines = text.split('\n')
+
+    # 兩階段提取：先找最後一條 ╌ 分隔線，只在其後搜尋選項
+    # （╌ 框框內是 plan 內容，可能含編號列表，不應當作選項）
+    last_border_idx = -1
+    for i in range(len(lines) - 1, -1, -1):
+        if '╌' in lines[i]:
+            last_border_idx = i
+            break
+
+    # 在 ╌ 之後的區域搜尋選項（如果沒有 ╌，搜尋整個文字）
+    search_start = last_border_idx + 1 if last_border_idx >= 0 else 0
+    options = []
+    first_option_idx = None
+
+    for i in range(search_start, len(lines)):
+        line_stripped = lines[i].strip()
+        if not line_stripped:
+            continue
+        match = patterns.CONFIRMATION_OPTION.match(line_stripped)
+        if match:
+            num, label = match.group(1), match.group(2).strip()
+            if len(num) <= 2:
+                if first_option_idx is None:
+                    first_option_idx = i
+                options.append((num, label))
+
+    # 提取標題：選項前的內容（含 ╌ 框框內的 plan）
+    title = ""
+    if first_option_idx is not None:
+        title_lines = []
+        border_count = 0
+        for i in range(first_option_idx - 1, max(first_option_idx - 60, -1), -1):
+            if i < 0:
+                break
+            line = lines[i].strip()
+            if not line:
+                continue
+            # ╌ 分隔線：第一條跳過，第二條停止（框框的上邊界）
+            if '╌' in line:
+                border_count += 1
+                if border_count >= 2:
+                    break
+                continue
+            # ─ 分隔線：停止
+            if line.startswith('─') and len(line) > 10:
+                break
+            title_lines.insert(0, line)
+        title = '\n'.join(title_lines)
+        if len(title) > 3000:
+            title = title[-3000:]
+
+    return title, options
+
+
+def interaction_polling_worker():
+    """輪詢 tmux 輸出，偵測互動選項並推送到 Telegram"""
+    while True:
+        time.sleep(app_config.tmux.POLL_INTERVAL)
+        try:
+            if not bot_state.session_manager or not bot_state.telegram_chat_id:
+                continue
+
+            for name in bot_state.session_manager.get_all_sessions():
+                config = bot_state.session_manager.get_session(name)
+                if not config:
+                    continue
+
+                log_file = config.log_file
+                if not os.path.exists(log_file):
+                    continue
+
+                # 讀取日誌尾部（最後 5000 字元，足以包含選項區塊）
+                try:
+                    file_size = os.path.getsize(log_file)
+                    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        f.seek(max(0, file_size - 5000))
+                        new_content = f.read()
+                except Exception:
+                    continue
+
+                if not new_content:
+                    continue
+
+                # 清理 ANSI 並偵測選項
+                cleaned = _clean_ansi(new_content)
+                title, options = _extract_options(cleaned)
+
+                if len(options) < 2:
+                    continue
+
+                # 防重複：冷卻時間 + hash
+                now = time.time()
+                last_sent = _poll_last_sent.get(name, 0)
+                if now - last_sent < POLL_COOLDOWN:
+                    continue
+
+                options_text = '|'.join(f"{n}.{l}" for n, l in options)
+                options_hash = hashlib.md5(options_text.encode()).hexdigest()
+                if options_hash in _poll_sent_hashes:
+                    continue
+                _poll_sent_hashes.add(options_hash)
+                _poll_last_sent[name] = now
+
+                # 組合 InlineKeyboard
+                # select_ = 直接選擇，input_ = 文字輸入（選擇後需追加訊息）
+                buttons = []
+                for num, label in options:
+                    is_text_input = any(kw.lower() in label.lower() for kw in TEXT_INPUT_KEYWORDS)
+                    prefix = "input_" if is_text_input else "select_"
+                    btn_label = f"✏️ {num}. {label}" if is_text_input else f"{num}. {label}"
+                    callback_data = f"{prefix}{name}:{num}"
+                    buttons.append([InlineKeyboardButton(btn_label, callback_data=callback_data)])
+
+                reply_markup = InlineKeyboardMarkup(buttons)
+
+                # 組合標題
+                header_parts = [f"📋 [#{name}]"]
+                if title:
+                    header_parts.append(title)
+                header = '\n'.join(header_parts)
+
+                # 用 requests 直接呼叫 Telegram API
+                try:
+                    import requests as req
+                    inline_keyboard = []
+                    for num, label in options:
+                        is_text_input = any(kw.lower() in label.lower() for kw in TEXT_INPUT_KEYWORDS)
+                        prefix = "input_" if is_text_input else "select_"
+                        btn_label = f"✏️ {num}. {label}" if is_text_input else f"{num}. {label}"
+                        inline_keyboard.append([{"text": btn_label, "callback_data": f"{prefix}{name}:{num}"}])
+                    payload = {
+                        "chat_id": bot_state.telegram_chat_id,
+                        "text": header,
+                        "reply_markup": json.dumps({"inline_keyboard": inline_keyboard})
+                    }
+                    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                    resp = req.post(url, json=payload, timeout=10)
+                    if resp.ok:
+                        logger.info(f"Sent interaction buttons for #{name}")
+                    else:
+                        logger.warning(f"Failed to send buttons: {resp.text}")
+                except Exception as e:
+                    logger.warning(f"Failed to send interaction buttons: {e}")
+
+        except Exception as e:
+            logger.error(f"Interaction polling error: {e}")
+
+
 def setup_bridge():
     """設置橋接"""
     logger.info(t('bridge.setup'))
@@ -461,6 +714,10 @@ def setup_bridge():
     # 啟動日誌輪替執行緒
     rotation_thread = threading.Thread(target=log_rotation_worker, daemon=True)
     rotation_thread.start()
+
+    # 啟動互動偵測輪詢執行緒
+    polling_thread = threading.Thread(target=interaction_polling_worker, daemon=True)
+    polling_thread.start()
 
     logger.info(t('bridge.setup_complete'))
 

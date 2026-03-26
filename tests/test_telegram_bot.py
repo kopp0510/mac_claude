@@ -634,3 +634,57 @@ class TestMessageQueueProcessor:
         """測試佇列容量限制"""
         from config import config as app_config
         assert bot_module.bot_state.message_queue.maxsize == app_config.queue.MESSAGE_QUEUE_SIZE
+
+
+class TestInteractionPolling:
+    """互動偵測輪詢測試"""
+
+    def test_clean_ansi(self):
+        """測試 ANSI escape code 清理"""
+        raw = "\x1b[38;5;153m❯\x1b[1C\x1b[38;5;246m1.\x1b[1C\x1b[38;5;153mYes, auto-accept edits\x1b[39m"
+        cleaned = bot_module._clean_ansi(raw)
+        assert "1." in cleaned
+        assert "Yes, auto-accept edits" in cleaned
+        assert "\x1b" not in cleaned
+
+    def test_extract_options(self):
+        """測試選項提取"""
+        text = """Some preamble text
+Would you like to proceed?
+❯ 1. Yes, auto-accept edits
+  2. Yes, manually approve edits
+  3. Tell Claude what to change
+      shift+tab to approve"""
+        title, options = bot_module._extract_options(text)
+        assert len(options) == 3
+        assert options[0] == ("1", "Yes, auto-accept edits")
+        assert options[1] == ("2", "Yes, manually approve edits")
+        assert options[2] == ("3", "Tell Claude what to change")
+        assert "Would you like to proceed?" in title
+
+    def test_extract_options_no_options(self):
+        """測試無選項的文字"""
+        text = "Just regular output\nNo options here"
+        title, options = bot_module._extract_options(text)
+        assert len(options) == 0
+
+    def test_extract_options_single_option_ignored(self):
+        """測試單一選項不被當作互動"""
+        text = "1. Some item"
+        title, options = bot_module._extract_options(text)
+        assert len(options) == 1  # 提取到但輪詢邏輯要求 >= 2
+
+    def test_duplicate_prevention(self):
+        """測試防重複機制"""
+        import hashlib
+        bot_module._poll_sent_hashes.clear()
+
+        options_text = "1.Option A|2.Option B"
+        h = hashlib.md5(options_text.encode()).hexdigest()
+
+        assert h not in bot_module._poll_sent_hashes
+        bot_module._poll_sent_hashes.add(h)
+        assert h in bot_module._poll_sent_hashes
+
+        # 清理
+        bot_module._poll_sent_hashes.clear()

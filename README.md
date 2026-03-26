@@ -13,6 +13,7 @@
 - 🖥️ **同時操作**：可以同時在終端和 Telegram 與 Claude Code 互動
 - 🤖 **Hook 即時通知**：AI CLI 完成回應時透過 Hook 即時推送（Claude: Stop, Gemini: AfterAgent），延遲 < 1 秒
 - 🎯 **互動式按鈕**：確認提示自動轉換為 Inline Keyboard 按鈕
+- 📋 **Plan Mode 互動**：Plan mode 期間的選項透過 tmux 輪詢自動推送到 Telegram，可直接點擊按鈕操作
 - 📊 **訊息截斷**：超過 4000 字元自動截斷，避免訊息過長
 - 🔒 **用戶驗證**：僅允許特定用戶使用
 - ⚡ **訊息佇列**：避免衝突，訊息依序處理
@@ -65,6 +66,7 @@
 | 熱重載 | `/reload` 更新配置，不中斷現有會話 |
 | Markdown fallback | 格式解析失敗自動改用純文字 |
 | 多語言支援 | 支援繁體中文（zh-TW）和英文（en），透過 `.env` 切換 |
+| Plan Mode 互動 | 自動偵測 Plan mode 選項並推送為 Telegram 按鈕 |
 
 ## 系統架構
 
@@ -398,6 +400,9 @@ tmux ls
 ```
 
 ## 常見問題
+
+**Q: Claude Code Plan Mode 在 Telegram 如何操作？**
+A: Plan mode 期間的互動選項（AskUserQuestion、ExitPlanMode）會透過 tmux 輪詢自動推送為 InlineKeyboard 按鈕。直接點擊即可選擇。文字輸入選項（✏️ 標記）選擇後需再發送 `#session 回饋內容`。
 
 **Q: 為什麼要用 tmux？**
 A: tmux 提供會話管理和日誌記錄，是實現雙向通訊的基礎。
