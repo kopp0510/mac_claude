@@ -48,9 +48,40 @@ class CliProvider(Protocol):
         """送出訊息時是否需要額外一次 Enter（Gemini CLI 需要）"""
         ...
 
+    def remove_hooks(self, work_dir: str) -> bool:
+        """從專案目錄移除 hook 配置"""
+        ...
+
     def is_installed(self) -> bool:
         """檢查 CLI 是否已安裝"""
         ...
+
+
+def _remove_hook_key(settings_file: Path, hook_key: str, log_label: str) -> bool:
+    """從設定檔移除指定 hook key（保留其他設定）
+
+    Args:
+        settings_file: 設定檔路徑
+        hook_key: 要移除的 hook 名稱（如 'Stop' 或 'AfterAgent'）
+        log_label: 日誌用的識別標籤
+    """
+    if not settings_file.exists():
+        return True
+
+    with open(settings_file, 'r', encoding='utf-8') as f:
+        settings = json.load(f)
+
+    if 'hooks' in settings and hook_key in settings['hooks']:
+        del settings['hooks'][hook_key]
+        # 如果 hooks 為空，移除整個 hooks key
+        if not settings['hooks']:
+            del settings['hooks']
+
+        with open(settings_file, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+
+    logger.info(t(log_label, name=str(settings_file.parent.parent)))
+    return True
 
 
 class ClaudeProvider:
@@ -134,6 +165,17 @@ class ClaudeProvider:
 
         except Exception as e:
             logger.warning(t('provider.hooks_config_failed', error=e))
+            return False
+
+    def remove_hooks(self, work_dir: str) -> bool:
+        """從 .claude/settings.local.json 移除 Stop hook（保留其他設定）"""
+        if not work_dir:
+            return False
+        try:
+            settings_file = Path(work_dir) / '.claude' / 'settings.local.json'
+            return _remove_hook_key(settings_file, 'Stop', 'provider.hooks_removed_claude')
+        except Exception as e:
+            logger.warning(t('provider.hooks_remove_failed', error=e))
             return False
 
 
@@ -225,6 +267,17 @@ class GeminiProvider:
 
         except Exception as e:
             logger.warning(t('provider.hooks_config_failed', error=e))
+            return False
+
+    def remove_hooks(self, work_dir: str) -> bool:
+        """從 .gemini/settings.json 移除 AfterAgent hook（保留其他設定）"""
+        if not work_dir:
+            return False
+        try:
+            settings_file = Path(work_dir) / '.gemini' / 'settings.json'
+            return _remove_hook_key(settings_file, 'AfterAgent', 'provider.hooks_removed_gemini')
+        except Exception as e:
+            logger.warning(t('provider.hooks_remove_failed', error=e))
             return False
 
     @staticmethod

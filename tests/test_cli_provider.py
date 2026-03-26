@@ -82,6 +82,36 @@ class TestClaudeProvider:
     def test_configure_hooks_no_work_dir(self):
         assert self.provider.configure_hooks("", "test", "/path/to/script.sh") is False
 
+    def test_remove_hooks(self):
+        """驗證移除 Stop hook 但保留其他設定"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 先配置 hooks
+            self.provider.configure_hooks(tmpdir, "test", "/path/to/script.sh")
+
+            settings_file = os.path.join(tmpdir, '.claude', 'settings.local.json')
+            # 加入 permissions
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+            settings['permissions'] = {"allow": ["read"]}
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f)
+
+            # 移除 hooks
+            assert self.provider.remove_hooks(tmpdir) is True
+
+            with open(settings_file, 'r') as f:
+                result = json.load(f)
+
+            # hooks.Stop 已移除
+            assert 'Stop' not in result.get('hooks', {})
+            # permissions 保留
+            assert result['permissions'] == {"allow": ["read"]}
+
+    def test_remove_hooks_no_file(self):
+        """驗證檔案不存在時不報錯"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert self.provider.remove_hooks(tmpdir) is True
+
 
 class TestGeminiProvider:
     """GeminiProvider 測試"""
@@ -149,6 +179,27 @@ class TestGeminiProvider:
             # 驗證保留原有設定
             assert settings['security'] == {"auth": {"selectedType": "oauth"}}
             assert 'hooks' in settings
+
+
+    def test_remove_hooks(self):
+        """驗證移除 AfterAgent hook 但保留其他設定"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.provider.configure_hooks(tmpdir, "test", "/path/to/script.sh")
+
+            settings_file = os.path.join(tmpdir, '.gemini', 'settings.json')
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+            settings['security'] = {"auth": {"selectedType": "oauth"}}
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f)
+
+            assert self.provider.remove_hooks(tmpdir) is True
+
+            with open(settings_file, 'r') as f:
+                result = json.load(f)
+
+            assert 'AfterAgent' not in result.get('hooks', {})
+            assert result['security'] == {"auth": {"selectedType": "oauth"}}
 
 
 class TestGeminiTrustFolder:

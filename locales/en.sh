@@ -59,6 +59,7 @@ MSG_STEP_CLEANUP_LOGS="Cleaning up logs..."
 MSG_BOT_STOPPED="Bot stopped"
 
 # === Cleanup tmux (cleanup_tmux) ===
+MSG_STEP_CLEANUP_HOOKS="Cleaning up hooks..."
 MSG_STEP_CLEANUP_TMUX="Cleaning up tmux sessions..."
 MSG_TMUX_KILLED="Terminated: %s"
 

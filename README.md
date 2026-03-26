@@ -43,7 +43,7 @@
 | 子命令 | 說明 |
 |--------|------|
 | `start` | 後台啟動 Bot（含配置驗證、venv 初始化） |
-| `stop` | 優雅停止 Bot 並清理所有 tmux 會話 |
+| `stop` | 優雅停止 Bot 並清理 hooks、tmux 會話及日誌 |
 | `restart` | 重啟 Bot（先 stop 後 start） |
 | `status` | 顯示 Bot 與會話運行狀態 |
 | `logs [session]` | 查看 Bot 主日誌或指定會話日誌 |
@@ -219,7 +219,7 @@ Do you want to proceed with editing these 3 files?
 
 ```bash
 ./bridge.sh start          # 後台啟動 Bot
-./bridge.sh stop           # 停止 Bot 並清理 tmux 會話
+./bridge.sh stop           # 停止 Bot 並清理 hooks、tmux、日誌
 ./bridge.sh restart        # 重啟 Bot
 ./bridge.sh status         # 查看 Bot 和會話狀態
 ./bridge.sh logs           # 查看 Bot 主日誌
@@ -337,8 +337,10 @@ LANGUAGE=zh-TW
 
 1. **限制用戶**：`ALLOWED_USER_IDS` 為必填項，未設定時 Bot 拒絕啟動
 2. **保護配置**：`.env` 加入 `.gitignore`，不要提交敏感資訊
-3. **工作目錄權限**：確保專案目錄權限正確
-4. **網絡安全**：使用 Polling 模式，無需公開網址
+3. **Shell 注入防護**：所有傳入 tmux 的參數使用 `shlex.quote()` 跳脫
+4. **鎖定依賴版本**：`requirements.txt` 鎖定精確版本，防止供應鏈攻擊
+5. **工作目錄權限**：確保專案目錄權限正確，日誌檔案權限為 `0o600`
+6. **網絡安全**：使用 Polling 模式，無需公開網址
 
 ## 故障排除
 

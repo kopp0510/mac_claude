@@ -59,6 +59,7 @@ MSG_STEP_CLEANUP_LOGS="清理日誌..."
 MSG_BOT_STOPPED="Bot 已停止"
 
 # === 清理 tmux (cleanup_tmux) ===
+MSG_STEP_CLEANUP_HOOKS="清理 hooks..."
 MSG_STEP_CLEANUP_TMUX="清理 tmux 會話..."
 MSG_TMUX_KILLED="已終止: %s"
 

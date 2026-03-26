@@ -124,10 +124,15 @@ class SessionManager:
         return status
 
     def kill_session(self, name: str) -> bool:
-        """終止指定會話"""
+        """終止指定會話（含移除 hooks）"""
         bridge = self.bridges.get(name)
         if not bridge:
             return False
+
+        # 移除 hooks
+        config = self.sessions.get(name)
+        if config:
+            bridge.cli_provider.remove_hooks(config.path)
 
         return bridge.kill_session()
 

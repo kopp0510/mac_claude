@@ -7,6 +7,7 @@ Telegram Bot - AI CLI 多會話並行橋接
 
 import json
 import os
+import re
 import subprocess
 import sys
 import signal
@@ -18,7 +19,7 @@ from pathlib import Path
 import yaml
 from dataclasses import dataclass, field
 from typing import Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 from collections import defaultdict
@@ -268,6 +269,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(confirm_text)
 
 
+def _parse_callback_data(data: str, prefix: str) -> tuple:
+    """解析 callback_data，移除前綴後拆分為 (session_name, value)
+
+    Returns:
+        (session_name, value) 或 (None, None) 若格式不正確
+    """
+    payload = data[len(prefix):]
+    parts = payload.rsplit(':', 1)
+    if len(parts) != 2:
+        return None, None
+    return parts[0], parts[1]
+
+
+def _send_tmux_selection(session_name: str, choice_num: str) -> None:
+    """透過 tmux 按鍵序列選擇指定選項（Down × N-1 次 + Enter）"""
+    bridge = bot_state.session_manager.get_bridge(session_name) if bot_state.session_manager else None
+    if not bridge or not bridge.session_exists():
+        return
+
+    try:
+        num = int(choice_num)
+        tmux_session = bot_state.session_manager.get_session(session_name).tmux_session
+        for _ in range(num - 1):
+            subprocess.run(
+                ['tmux', 'send-keys', '-t', tmux_session, 'Down'],
+                capture_output=True, text=True
+            )
+            time.sleep(0.1)
+        subprocess.run(
+            ['tmux', 'send-keys', '-t', tmux_session, 'Enter'],
+            capture_output=True, text=True
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send selection keys: {e}")
+
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 Inline Keyboard 按鈕點擊"""
     query = update.callback_query
@@ -282,31 +319,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 文字輸入選項：input_{session}:{num}（選擇後提示使用者追加訊息）
     if data.startswith('input_'):
-        payload = data[6:]  # 移除 'input_'
-        parts = payload.rsplit(':', 1)
-        if len(parts) != 2:
+        session_name, choice_num = _parse_callback_data(data, 'input_')
+        if not session_name:
             return
 
-        session_name, choice_num = parts
-        bridge = bot_state.session_manager.get_bridge(session_name) if bot_state.session_manager else None
-
-        if bridge and bridge.session_exists():
-            try:
-                num = int(choice_num)
-                tmux_session = bot_state.session_manager.get_session(session_name).tmux_session
-                for _ in range(num - 1):
-                    subprocess.run(
-                        ['tmux', 'send-keys', '-t', tmux_session, 'Down'],
-                        capture_output=True, text=True
-                    )
-                    time.sleep(0.1)
-                subprocess.run(
-                    ['tmux', 'send-keys', '-t', tmux_session, 'Enter'],
-                    capture_output=True, text=True
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send selection keys: {e}")
-
+        _send_tmux_selection(session_name, choice_num)
         _poll_last_sent[session_name] = time.time()
 
         await query.edit_message_text(
@@ -317,33 +334,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 互動輪詢選項：select_{session}:{num}（用 tmux 按鍵序列選擇）
     if data.startswith('select_'):
-        payload = data[7:]  # 移除 'select_'
-        parts = payload.rsplit(':', 1)
-        if len(parts) != 2:
+        session_name, choice_num = _parse_callback_data(data, 'select_')
+        if not session_name:
             return
 
-        session_name, choice_num = parts
-        bridge = bot_state.session_manager.get_bridge(session_name) if bot_state.session_manager else None
-
-        if bridge and bridge.session_exists():
-            # 發送 Down arrow × (N-1) 次移到目標選項，再按 Enter
-            try:
-                num = int(choice_num)
-                tmux_session = bot_state.session_manager.get_session(session_name).tmux_session
-                for _ in range(num - 1):
-                    subprocess.run(
-                        ['tmux', 'send-keys', '-t', tmux_session, 'Down'],
-                        capture_output=True, text=True
-                    )
-                    time.sleep(0.1)
-                subprocess.run(
-                    ['tmux', 'send-keys', '-t', tmux_session, 'Enter'],
-                    capture_output=True, text=True
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send selection keys: {e}")
-
-        # 重設冷卻時間（等 Claude 處理完再偵測新選項）
+        _send_tmux_selection(session_name, choice_num)
         _poll_last_sent[session_name] = time.time()
 
         await query.edit_message_text(
@@ -356,12 +351,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data.startswith('choice_'):
         return
 
-    payload = data[7:]  # 移除 'choice_'
-    parts = payload.rsplit(':', 1)
-    if len(parts) != 2:
+    session_name, choice = _parse_callback_data(data, 'choice_')
+    if not session_name:
         return
-
-    session_name, choice = parts
 
     try:
         bot_state.message_queue.put_nowait((session_name, choice))
@@ -372,7 +364,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 重設冷卻時間
     _poll_last_sent[session_name] = time.time()
 
     await query.edit_message_text(
@@ -532,31 +523,35 @@ TEXT_INPUT_KEYWORDS = ['Type something', 'Tell Claude what to change']
 
 def _clean_ansi(text: str) -> str:
     """清理 ANSI escape codes 和控制字元"""
-    import re as _re
     # 先把 cursor forward \x1b[NC] 替換為空格（TUI 用它代替空格）
-    text = _re.sub(r'\x1b\[(\d+)C', lambda m: ' ' * int(m.group(1)), text)
+    text = re.sub(r'\x1b\[(\d+)C', lambda m: ' ' * int(m.group(1)), text)
     text = patterns.ANSI_ESCAPE.sub('', text)
     text = patterns.CONTROL_CHARS.sub('', text)
     return text
 
 
-def _extract_options(text: str) -> tuple:
-    """從清理後的文字尾部提取標題和選項行
+def _extract_options(text: str, cli_type: str = 'claude') -> tuple:
+    """從清理後的文字提取標題和選項行，根據 CLI 類型分派邏輯
 
     Returns:
-        (title, options) — title 為選項前的提問文字，options 為 [(num, label), ...]
+        (title, options) — title 為提問文字，options 為 [(num, label), ...]
     """
+    if cli_type == 'gemini':
+        return _extract_options_gemini(text)
+    return _extract_options_claude(text)
+
+
+def _extract_options_claude(text: str) -> tuple:
+    """Claude Code 格式：╌ 分隔 plan 內容，❯ 標記選項"""
     lines = text.split('\n')
 
-    # 兩階段提取：先找最後一條 ╌ 分隔線，只在其後搜尋選項
-    # （╌ 框框內是 plan 內容，可能含編號列表，不應當作選項）
+    # 找最後一條 ╌ 分隔線，只在其後搜尋選項
     last_border_idx = -1
     for i in range(len(lines) - 1, -1, -1):
         if '╌' in lines[i]:
             last_border_idx = i
             break
 
-    # 在 ╌ 之後的區域搜尋選項（如果沒有 ╌，搜尋整個文字）
     search_start = last_border_idx + 1 if last_border_idx >= 0 else 0
     options = []
     first_option_idx = None
@@ -573,7 +568,7 @@ def _extract_options(text: str) -> tuple:
                     first_option_idx = i
                 options.append((num, label))
 
-    # 提取標題：選項前的內容（含 ╌ 框框內的 plan）
+    # 標題：╌ 框框內的 plan 內容 + 提問文字
     title = ""
     if first_option_idx is not None:
         title_lines = []
@@ -584,19 +579,71 @@ def _extract_options(text: str) -> tuple:
             line = lines[i].strip()
             if not line:
                 continue
-            # ╌ 分隔線：第一條跳過，第二條停止（框框的上邊界）
             if '╌' in line:
                 border_count += 1
                 if border_count >= 2:
                     break
                 continue
-            # ─ 分隔線：停止
             if line.startswith('─') and len(line) > 10:
                 break
             title_lines.insert(0, line)
         title = '\n'.join(title_lines)
         if len(title) > 3000:
             title = title[-3000:]
+
+    return title, options
+
+
+def _extract_options_gemini(text: str) -> tuple:
+    """Gemini CLI 格式：╭╰ 框框包裹，│ 邊線，● 標記當前選項"""
+    lines = text.split('\n')
+
+    # 找最後一個 ╰ 結束行（框框底部）
+    box_end = -1
+    for i in range(len(lines) - 1, -1, -1):
+        if '╰' in lines[i]:
+            box_end = i
+            break
+
+    if box_end < 0:
+        return "", []
+
+    # 找對應的 ╭ 開始行
+    box_start = -1
+    for i in range(box_end - 1, -1, -1):
+        if '╭' in lines[i]:
+            box_start = i
+            break
+
+    if box_start < 0:
+        return "", []
+
+    # 在框框內搜尋選項（移除 │ 邊線後匹配）
+    options = []
+    title_lines = []
+    first_option_idx = None
+
+    for i in range(box_start + 1, box_end):
+        line = lines[i]
+        # 移除 │ 邊線
+        cleaned_line = line.replace('│', '').strip()
+        if not cleaned_line:
+            continue
+
+        match = patterns.GEMINI_OPTION.match(cleaned_line)
+        if match:
+            num, label = match.group(1), match.group(2).strip()
+            if len(num) <= 2:
+                if first_option_idx is None:
+                    first_option_idx = i
+                options.append((num, label))
+        elif first_option_idx is None:
+            # 選項之前的內容作為標題
+            title_lines.append(cleaned_line)
+
+    title = '\n'.join(title_lines)
+    if len(title) > 3000:
+        title = title[-3000:]
 
     return title, options
 
@@ -630,9 +677,10 @@ def interaction_polling_worker():
                 if not new_content:
                     continue
 
-                # 清理 ANSI 並偵測選項
+                # 清理 ANSI 並偵測選項（根據 CLI 類型分派）
                 cleaned = _clean_ansi(new_content)
-                title, options = _extract_options(cleaned)
+                cli_type = config.cli_type if config else 'claude'
+                title, options = _extract_options(cleaned, cli_type)
 
                 if len(options) < 2:
                     continue
@@ -650,25 +698,14 @@ def interaction_polling_worker():
                 _poll_sent_hashes.add(options_hash)
                 _poll_last_sent[name] = now
 
-                # 組合 InlineKeyboard
-                # select_ = 直接選擇，input_ = 文字輸入（選擇後需追加訊息）
-                buttons = []
-                for num, label in options:
-                    is_text_input = any(kw.lower() in label.lower() for kw in TEXT_INPUT_KEYWORDS)
-                    prefix = "input_" if is_text_input else "select_"
-                    btn_label = f"✏️ {num}. {label}" if is_text_input else f"{num}. {label}"
-                    callback_data = f"{prefix}{name}:{num}"
-                    buttons.append([InlineKeyboardButton(btn_label, callback_data=callback_data)])
-
-                reply_markup = InlineKeyboardMarkup(buttons)
-
                 # 組合標題
                 header_parts = [f"📋 [#{name}]"]
                 if title:
                     header_parts.append(title)
                 header = '\n'.join(header_parts)
 
-                # 用 requests 直接呼叫 Telegram API
+                # 組合 InlineKeyboard 並用 requests 直接呼叫 Telegram API
+                # （輪詢執行緒無法使用 async，故用同步 requests）
                 try:
                     import requests as req
                     inline_keyboard = []

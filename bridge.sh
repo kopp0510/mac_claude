@@ -331,7 +331,8 @@ do_stop() {
         warn "$MSG_NOT_RUNNING"
         # 清理可能殘留的 PID 檔案
         rm -f "$PID_FILE"
-        # 仍然嘗試清理 tmux 會話
+        # 仍然嘗試清理 hooks 和 tmux 會話
+        cleanup_hooks
         cleanup_tmux
         return 0
     fi
@@ -360,6 +361,9 @@ do_stop() {
 
     # 清理 PID 檔案
     rm -f "$PID_FILE"
+
+    # 清理 hooks
+    cleanup_hooks
 
     # 清理 tmux 會話
     cleanup_tmux
@@ -390,6 +394,54 @@ for s in (c.get('sessions', []) if c else []):
     prefix = 'gemini-' if cli_type == 'gemini' else 'claude-'
     tmux = s.get('tmux', f'{prefix}{name}')
     print(tmux)
+" 2>/dev/null
+    fi
+}
+
+# === 清理 hooks ===
+cleanup_hooks() {
+    local PYTHON="python3"
+    if [ -x "$VENV_DIR/bin/python3" ]; then
+        PYTHON="$VENV_DIR/bin/python3"
+    fi
+
+    if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
+        step "$MSG_STEP_CLEANUP_HOOKS"
+        $PYTHON -c "
+import yaml, json
+from pathlib import Path
+
+with open('$SCRIPT_DIR/sessions.yaml') as f:
+    c = yaml.safe_load(f)
+
+for s in (c.get('sessions', []) if c else []):
+    path = s.get('path', '')
+    cli_type = s.get('cli_type', 'claude')
+    if not path:
+        continue
+
+    if cli_type == 'gemini':
+        sf = Path(path) / '.gemini' / 'settings.json'
+        hook_key = 'AfterAgent'
+    else:
+        sf = Path(path) / '.claude' / 'settings.local.json'
+        hook_key = 'Stop'
+
+    if not sf.exists():
+        continue
+
+    try:
+        with open(sf, 'r') as f:
+            settings = json.load(f)
+        if 'hooks' in settings and hook_key in settings['hooks']:
+            del settings['hooks'][hook_key]
+            if not settings['hooks']:
+                del settings['hooks']
+            with open(sf, 'w') as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+            print(f'  removed {hook_key} hook: {path}')
+    except Exception as e:
+        print(f'  warning: {e}')
 " 2>/dev/null
     fi
 }

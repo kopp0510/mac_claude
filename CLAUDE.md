@@ -8,7 +8,7 @@
 ```bash
 # Bot 管理
 ./bridge.sh start          # 後台啟動（含配置驗證）
-./bridge.sh stop           # 優雅停止（含清理 tmux）
+./bridge.sh stop           # 優雅停止（含清理 hooks、tmux、日誌）
 ./bridge.sh restart        # 重啟
 ./bridge.sh status         # 查看狀態
 ./bridge.sh logs           # 查看 bot 日誌
@@ -19,7 +19,7 @@
 python3 telegram_bot_multi.py
 
 # 測試
-pytest                     # 執行所有測試（~166 個）
+pytest                     # 執行所有測試（~177 個）
 pytest --cov               # 含覆蓋率
 
 # 配置
@@ -99,28 +99,29 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - 目錄必須被信任才能載入 hooks（`GeminiProvider` 自動處理 `~/.gemini/trustedFolders.json`）
 - 輸入框需要兩次 Enter 才能送出（`extra_enter` 屬性）
 - 若 hook 未觸發，檢查 `.gemini/settings.json` 和 `~/.ai_bridge/logs/hook_debug_*.log`
+- Gemini 互動選項格式為 `╭╰` 框框 + `│` 邊線 + `●` 標記，由 `_extract_options_gemini()` 獨立處理（與 Claude 的 `❯` 格式分開）
 
 ### Telegram 發送
 - Markdown 解析失敗時自動 fallback 為純文字重發
-- 按鈕 callback_data 用冒號分隔：`choice_{session}:{num}`（支援含底線的會話名）
+- 按鈕 callback_data 三種前綴：`select_{session}:{num}`（互動輪詢選項，tmux 按鍵選擇）、`input_{session}:{num}`（文字輸入選項，標記 ✏️）、`choice_{session}:{num}`（一般確認選項，文字發送到佇列）
 - 無 `#` 前綴的訊息會返回錯誤（無預設會話）
 
 ### 日誌管理
 - 格式：`~/.ai_bridge/logs/{cli_type}_{name}.log`
 - **自動輪替**：超過 10MB 截斷保留 5MB（每 30 分鐘檢查，常數在 `config.py` 的 `TmuxConfig`）
-- **stop 清空**：`bridge.sh stop` 刪除所有會話日誌和 hook debug 日誌
+- **stop 清理**：`bridge.sh stop` 移除所有 hooks（`cleanup_hooks`）、終止 tmux 會話、刪除會話日誌和 hook debug 日誌
 
 ### 其他
 - 會話名稱模式：`[\w\-]+`
 - `shlex.quote()` 防護 shell 注入
 - ALLOWED_USER_IDS 為必填，空白拒絕啟動
 - 每用戶速率限制：5 秒內最多 3 則
-- **翻譯檔**：`locales/zh-TW.json` + `locales/en.json`（Python 用）、`locales/zh-TW.sh` + `locales/en.sh`（Shell 用）。新增字串需同時更新兩個語言檔
+- **翻譯檔**：`locales/zh-TW.json` + `locales/en.json`（Python 用）、`locales/zh-TW.sh` + `locales/en.sh`（Shell 用）。新增字串需同時更新四個語言檔
 - **登入由使用者自行處理**：本專案僅負責 Telegram ↔ CLI 的訊息轉發，不處理 Claude Code 或 Gemini CLI 的登入/認證。使用前須確保 CLI 已完成登入（`claude` / `gemini` 可正常執行）
 
 ### i18n 開發注意事項
 - 所有使用者可見字串用 `t('module.key', var=value)` — 不要硬編碼中文或英文
-- `send_telegram_notification.py` 被 hook 獨立調用，需自行 `i18n.init()`（不共享 bot 的初始化）
+- `notify_telegram.sh` 被 hook 獨立調用，內部呼叫 `send_telegram_notification.py`，後者需自行 `i18n.init()`（不共享 bot 的初始化）
 - Python 中避免用 `t` 作為迴圈變數名（與 `from i18n import t` 衝突）
 - `.env` 新增設定時，需在 `bridge.sh` 的 `do_validate()` 加入檢查並提醒使用者
 

@@ -79,8 +79,11 @@ class CompiledPatterns:
     # 多餘空行
     MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
 
-    # 確認選項模式
+    # Claude Code 確認選項模式（❯ 1. xxx）
     CONFIRMATION_OPTION = re.compile(r'^\s*[❯]?\s*(\d+)\.\s*(.+)')
+
+    # Gemini CLI 確認選項模式（● 1. xxx，框線已移除後）
+    GEMINI_OPTION = re.compile(r'^\s*[●]?\s*(\d+)\.\s*(.*\S)')
 
     # 會話名稱模式
     SESSION_NAME = re.compile(r'^[\w\-]+$')

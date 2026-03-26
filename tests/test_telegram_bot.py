@@ -674,6 +674,34 @@ Would you like to proceed?
         title, options = bot_module._extract_options(text)
         assert len(options) == 1  # 提取到但輪詢邏輯要求 >= 2
 
+    def test_extract_options_gemini(self):
+        """測試 Gemini CLI 格式選項提取"""
+        text = """
+╭──────────────────────────────────────────────────────────────╮
+│ Action Required                                              │
+│                                                              │
+│ ?  Shell git remote update                                   │
+│ Allow execution of: 'git'?                                   │
+│                                                              │
+│ ● 1. Allow once                                              │
+│   2. Allow for this session                                  │
+│   3. No, suggest changes (esc)                               │
+│                                                              │
+╰──────────────────────────────────────────────────────────────╯
+"""
+        title, options = bot_module._extract_options(text, cli_type='gemini')
+        assert len(options) == 3
+        assert options[0] == ("1", "Allow once")
+        assert options[1] == ("2", "Allow for this session")
+        assert options[2] == ("3", "No, suggest changes (esc)")
+        assert "Allow execution" in title
+
+    def test_extract_options_gemini_no_box(self):
+        """測試 Gemini 無框框時回傳空"""
+        text = "Just some gemini output\nNo box here"
+        title, options = bot_module._extract_options(text, cli_type='gemini')
+        assert len(options) == 0
+
     def test_duplicate_prevention(self):
         """測試防重複機制"""
         import hashlib

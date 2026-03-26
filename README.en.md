@@ -43,7 +43,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 | Subcommand | Description |
 |------------|-------------|
 | `start` | Start bot in background (with config validation, venv init) |
-| `stop` | Gracefully stop bot and clean up all tmux sessions |
+| `stop` | Gracefully stop bot and clean up hooks, tmux sessions and logs |
 | `restart` | Restart bot (stop then start) |
 | `status` | Show bot and session running status |
 | `logs [session]` | View bot main log or specific session log |
@@ -219,7 +219,7 @@ Do you want to proceed with editing these 3 files?
 
 ```bash
 ./bridge.sh start          # Start bot in background
-./bridge.sh stop           # Stop bot and clean up tmux sessions
+./bridge.sh stop           # Stop bot and clean up hooks, tmux, logs
 ./bridge.sh restart        # Restart bot
 ./bridge.sh status         # View bot and session status
 ./bridge.sh logs           # View bot main log
@@ -277,7 +277,7 @@ sessions:
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ALLOWED_USER_IDS=user_id_1,user_id_2
-LANGUAGE=zh-TW
+LANGUAGE=en
 ```
 
 **Variables:**
