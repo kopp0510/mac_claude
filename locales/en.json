@@ -121,14 +121,19 @@
   "provider": {
     "hooks_configured_claude": "Configured Claude Code hooks: {name}",
     "hooks_configured_gemini": "Configured Gemini CLI hooks: {name}",
+    "hooks_configured_codex": "Configured Codex CLI hooks: {name}",
     "hooks_read_failed": "Failed to read existing settings: {error}",
     "hooks_config_failed": "Failed to configure hooks: {error}",
     "folder_trusted": "Trusted Gemini project directory: {path}",
+    "folder_trusted_codex": "Trusted Codex project directory: {path}",
     "folder_trust_failed": "Failed to set directory trust: {error}",
     "unsupported_cli": "Unsupported CLI type: {cli_type} (supported: {supported})",
     "hooks_removed_claude": "Removed Claude Code hooks: {name}",
     "hooks_removed_gemini": "Removed Gemini CLI hooks: {name}",
-    "hooks_remove_failed": "Failed to remove hooks: {error}"
+    "hooks_removed_codex": "Removed Codex CLI hooks: {name}",
+    "hooks_remove_failed": "Failed to remove hooks: {error}",
+    "hooks_feature_enabled": "Enabled Codex hooks feature flag: {path}",
+    "hooks_feature_enable_failed": "Failed to enable Codex hooks feature flag: {error}"
   },
   "notification": {
     "markdown_fallback": "Markdown parse failed, retrying with plain text",

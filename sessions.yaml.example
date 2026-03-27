@@ -1,6 +1,6 @@
 # CLI 會話配置範例
 # 複製此文件為 sessions.yaml 並修改路徑
-# 支援 Claude Code 和 Gemini CLI
+# 支援 Claude Code、Gemini CLI 和 OpenAI Codex CLI
 
 sessions:
   # 範例會話 1 - Claude Code（預設）
@@ -22,12 +22,19 @@ sessions:
     # tmux 可選，預設為 gemini-gemini-project
     cli_args: "--yolo"
 
-  # 範例會話 4 - 向後相容（claude_args 仍可使用）
+  # 範例會話 4 - OpenAI Codex CLI
+  - name: codex-project
+    path: /Users/username/project/codex-project
+    cli_type: codex
+    # tmux 可選，預設為 codex-codex-project
+    # cli_args: "--model o4-mini"
+
+  # 範例會話 5 - 向後相容（claude_args 仍可使用）
   - name: api
     path: /Users/username/project/api-server
     claude_args: "--model sonnet"
 
-  # 範例會話 5 - 跳過權限檢查（僅限沙箱環境）
+  # 範例會話 6 - 跳過權限檢查（僅限沙箱環境）
   # - name: sandbox
   #   path: /Users/username/project/sandbox
   #   cli_args: "--dangerously-skip-permissions"

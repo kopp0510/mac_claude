@@ -2,16 +2,16 @@
 
 # AI CLI Telegram Multi-Session Bridge
 
-Interact bidirectionally with multiple running AI CLI instances (Claude Code, Gemini CLI) via Telegram.
+Interact bidirectionally with multiple running AI CLI instances (Claude Code, Gemini CLI, OpenAI Codex CLI) via Telegram.
 
 ## Features
 
 - 🔄 **Bidirectional Communication**: AI CLI output is pushed to Telegram in real-time; Telegram messages are sent back to AI CLI
-- 🔀 **Multi-Session Parallel**: Manage multiple AI CLI instances (Claude Code, Gemini CLI) simultaneously, running tasks in parallel
+- 🔀 **Multi-Session Parallel**: Manage multiple AI CLI instances (Claude Code, Gemini CLI, Codex CLI) simultaneously, running tasks in parallel
 - 🏷️ **Source Tagging**: All replies are tagged with source `📍 project` for clear identification
 - 📮 **Smart Routing**: Use `#project` syntax to target specific sessions, or `#all` to broadcast to all
 - 🖥️ **Concurrent Access**: Interact with Claude Code from both terminal and Telegram at the same time
-- 🤖 **Hook-Based Notifications**: Instant push when AI CLI finishes responding via hooks (Claude: Stop, Gemini: AfterAgent), latency < 1 second
+- 🤖 **Hook-Based Notifications**: Instant push when AI CLI finishes responding via hooks (Claude: Stop, Gemini: AfterAgent, Codex: Stop), latency < 1 second
 - 🎯 **Interactive Buttons**: Confirmation prompts are automatically converted to Inline Keyboard buttons
 - 📋 **Plan Mode Interaction**: Plan mode options are auto-detected via tmux polling and pushed to Telegram as clickable buttons
 - 📊 **Message Truncation**: Messages over 4000 characters are automatically truncated
@@ -27,6 +27,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 |----------|-----------|-------------|---------------|
 | Claude Code | Stop | `.claude/settings.local.json` | `claude {args}` |
 | Gemini CLI | AfterAgent | `.gemini/settings.json` | `gemini {args}` |
+| Codex CLI | Stop | `.codex/hooks.json` | `codex {args}` |
 
 ### Telegram Commands
 
@@ -54,7 +55,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 | Feature | Description |
 |---------|-------------|
 | Bidirectional Communication | Telegram ↔ AI CLI, Hook-driven instant push (latency < 1s) |
-| Multi-CLI Support | Claude Code + Gemini CLI, Strategy pattern abstraction |
+| Multi-CLI Support | Claude Code + Gemini CLI + Codex CLI, Strategy pattern abstraction |
 | Multi-Session Parallel | Manage multiple independent CLI instances simultaneously |
 | Smart Routing | `#session` targeting, `#all` broadcast (no default session) |
 | Interactive Buttons | Confirmation prompts auto-converted to Inline Keyboard |
@@ -104,7 +105,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 
 > **Important**: This tool only bridges messages between Telegram and CLI — it does NOT handle CLI login. Before starting, make sure:
 
-1. **CLI is logged in**: Run `claude` or `gemini` in terminal and confirm it works interactively (not a login screen)
+1. **CLI is logged in**: Run `claude`, `gemini`, or `codex` in terminal and confirm it works interactively (not a login screen)
 2. **tmux is installed**: `tmux -V`
 3. **Python 3.8+**: `python3 --version`
 
@@ -204,7 +205,7 @@ Tests complete! All tests passed.
 
 ### Interactive Buttons
 
-When Claude asks for confirmation, buttons are displayed automatically:
+When AI CLI asks for confirmation, buttons are displayed automatically:
 
 ```
 [#webapp]
@@ -250,7 +251,7 @@ Ctrl+B, then press D
 sessions:
   - name: session_name          # Used for #name routing
     path: project_path          # CLI working directory
-    cli_type: claude            # CLI type (optional, claude or gemini, defaults to claude)
+    cli_type: claude            # CLI type (optional, claude, gemini, or codex, defaults to claude)
     tmux: tmux_session_name     # tmux session name (optional, defaults to {cli_type}-{name})
     cli_args: "launch args"     # CLI arguments (optional)
 ```
@@ -270,6 +271,11 @@ sessions:
     path: /path/to/infrastructure
     cli_type: gemini
     cli_args: "--yolo"
+
+  - name: codex-app
+    path: /path/to/codex-app
+    cli_type: codex
+    cli_args: "--model o4-mini"
 ```
 
 ### .env Configuration
@@ -289,8 +295,8 @@ LANGUAGE=en
 
 ### Instant Notifications (Hook-Driven)
 
-1. AI CLI triggers hook when it finishes responding (Claude: Stop, Gemini: AfterAgent)
-2. `notify_telegram.sh` reads response from hook stdin (Claude: `last_assistant_message`, Gemini: `prompt_response`)
+1. AI CLI triggers hook when it finishes responding (Claude: Stop, Gemini: AfterAgent, Codex: Stop)
+2. `notify_telegram.sh` reads response from hook stdin (Claude/Codex: `last_assistant_message`, Gemini: `prompt_response`)
 3. `send_telegram_notification.py` pushes instantly via Telegram Bot API
 4. Latency < 1 second, event-driven, clean reply content without ANSI codes
 
@@ -317,10 +323,10 @@ LANGUAGE=en
 - `message_router.py` - Message router
 - `tmux_bridge.py` - Tmux bridge module
 - `config.py` - Centralized configuration management
-- `cli_provider.py` - CLI abstraction layer (Strategy pattern, supports Claude/Gemini)
+- `cli_provider.py` - CLI abstraction layer (Strategy pattern, supports Claude/Gemini/Codex)
 
 **Hook Notifications:**
-- `notify_telegram.sh` - CLI Hook script (Claude: Stop, Gemini: AfterAgent)
+- `notify_telegram.sh` - CLI Hook script (Claude: Stop, Gemini: AfterAgent, Codex: Stop)
 - `send_telegram_notification.py` - Telegram API sender
 
 **Internationalization:**
@@ -380,8 +386,11 @@ python3 -c "import telegram; import yaml; import requests"
 ### Hook Notifications Not Triggering
 
 ```bash
-# Check hook config (must be in settings.local.json, not config.json)
-cat /path/to/project/.claude/settings.local.json
+# Check hook config
+cat /path/to/project/.claude/settings.local.json  # Claude
+cat /path/to/project/.gemini/settings.json         # Gemini
+cat /path/to/project/.codex/hooks.json             # Codex
+cat ~/.codex/config.toml                           # Codex feature flag
 
 # Check hook script permissions
 ls -la notify_telegram.sh send_telegram_notification.py
@@ -431,7 +440,7 @@ A: No! Use the `/reload` command to hot-reload `sessions.yaml`. The system autom
 
 ## Complete Removal
 
-Follow these steps in order to fully remove this project. **Deleting the project folder without cleaning up hooks will cause Claude Code / Gemini CLI to throw hook errors on every response.**
+Follow these steps in order to fully remove this project. **Deleting the project folder without cleaning up hooks will cause Claude Code / Gemini CLI / Codex CLI to throw hook errors on every response.**
 
 ### 1. Stop the Service
 
@@ -452,9 +461,12 @@ grep -rl "notify_telegram" /path/to/project/.claude/settings.local.json
 
 **Gemini projects** — Edit `{project_path}/.gemini/settings.json`, remove entries containing `notify_telegram.sh` from `hooks.AfterAgent`.
 
-### 3. Clean Up Gemini Trusted Folders (if using Gemini)
+**Codex projects** — Edit `{project_path}/.codex/hooks.json`, remove entries containing `notify_telegram.sh` from `hooks.Stop`.
 
-Edit `~/.gemini/trustedFolders.json` and remove path entries added by this bot.
+### 3. Clean Up Trusted Folder Settings (if using Gemini or Codex)
+
+- **Gemini**: Edit `~/.gemini/trustedFolders.json` and remove path entries added by this bot.
+- **Codex**: Edit `~/.codex/config.toml` and remove `[projects."..."]` sections added by this bot.
 
 ### 4. Remove System Directory
 
@@ -471,7 +483,7 @@ rm -rf /path/to/ai_bridge
 ### 6. Verify No Residual tmux Sessions
 
 ```bash
-tmux ls    # Check for leftover claude-* or gemini-* sessions
+tmux ls    # Check for leftover claude-*, gemini-*, or codex-* sessions
 tmux kill-session -t <session_name>    # Remove any remaining sessions
 ```
 

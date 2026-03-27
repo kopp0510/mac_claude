@@ -121,14 +121,19 @@
   "provider": {
     "hooks_configured_claude": "已配置 Claude Code hooks: {name}",
     "hooks_configured_gemini": "已配置 Gemini CLI hooks: {name}",
+    "hooks_configured_codex": "已配置 Codex CLI hooks: {name}",
     "hooks_read_failed": "讀取現有設定失敗: {error}",
     "hooks_config_failed": "配置 hooks 失敗: {error}",
     "folder_trusted": "已信任 Gemini 專案目錄: {path}",
+    "folder_trusted_codex": "已信任 Codex 專案目錄: {path}",
     "folder_trust_failed": "設定目錄信任失敗: {error}",
     "unsupported_cli": "不支援的 CLI 類型: {cli_type}（支援: {supported}）",
     "hooks_removed_claude": "已移除 Claude Code hooks: {name}",
     "hooks_removed_gemini": "已移除 Gemini CLI hooks: {name}",
-    "hooks_remove_failed": "移除 hooks 失敗: {error}"
+    "hooks_removed_codex": "已移除 Codex CLI hooks: {name}",
+    "hooks_remove_failed": "移除 hooks 失敗: {error}",
+    "hooks_feature_enabled": "已啟用 Codex hooks 功能旗標: {path}",
+    "hooks_feature_enable_failed": "啟用 Codex hooks 功能旗標失敗: {error}"
   },
   "notification": {
     "markdown_fallback": "Markdown 解析失敗，改用純文字重發",

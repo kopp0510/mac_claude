@@ -184,6 +184,10 @@ class TmuxBridge:
         ):
             return False
 
+        # Codex ink/React TUI 需要延遲，否則 Enter 可能被當成輸入框的換行
+        if self.cli_provider.pre_enter_delay > 0:
+            time.sleep(self.cli_provider.pre_enter_delay)
+
         if not self._run_tmux(
             ['send-keys', '-t', self.session_name, 'Enter'],
             t('tmux.send_enter_failed')

@@ -151,6 +151,7 @@ class TestCreateSession:
         provider = MagicMock()
         provider.configure_hooks = MagicMock(return_value=True)
         provider.build_launch_command = MagicMock(return_value="claude")
+        provider.pre_enter_delay = 0
 
         bridge = TmuxBridge("test", cli_provider=provider)
         bridge._create_log_file = MagicMock(return_value=True)
@@ -175,6 +176,7 @@ class TestCreateSession:
         provider = MagicMock()
         provider.configure_hooks = MagicMock(return_value=True)
         provider.build_launch_command = MagicMock(return_value="claude --model sonnet")
+        provider.pre_enter_delay = 0
 
         bridge = TmuxBridge("test", cli_provider=provider)
         bridge._create_log_file = MagicMock(return_value=True)

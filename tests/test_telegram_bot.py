@@ -702,6 +702,28 @@ Would you like to proceed?
         title, options = bot_module._extract_options(text, cli_type='gemini')
         assert len(options) == 0
 
+    def test_extract_options_codex(self):
+        """測試 Codex 選項提取（› 標記 + 編號）"""
+        text = (
+            "Would you like to run the following command?\n\n"
+            "$ git remote update\n\n"
+            "› 1. Yes, proceed (y)\n"
+            "  2. Yes, and don't ask again (p)\n"
+            "  3. No, and tell Codex what to do differently (esc)\n\n"
+            "  Press enter to confirm or esc to cancel"
+        )
+        title, options = bot_module._extract_options(text, cli_type='codex')
+        assert len(options) == 3
+        assert options[0] == ('1', 'Yes, proceed (y)')
+        assert options[2][0] == '3'
+        assert 'git remote update' in title
+
+    def test_extract_options_codex_no_options(self):
+        """測試 Codex 無選項時回傳空"""
+        text = "Just some codex output\nNo options here"
+        title, options = bot_module._extract_options(text, cli_type='codex')
+        assert len(options) == 0
+
     def test_duplicate_prevention(self):
         """測試防重複機制"""
         import hashlib

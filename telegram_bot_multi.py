@@ -518,7 +518,20 @@ _poll_last_sent: dict = {}  # {session_name: timestamp}，防短時間重複
 POLL_COOLDOWN = 30  # 同一 session 發送冷卻時間（秒）
 
 # 文字輸入選項的關鍵字（選擇後需要使用者追加輸入）
-TEXT_INPUT_KEYWORDS = ['Type something', 'Tell Claude what to change']
+TEXT_INPUT_KEYWORDS = ['Type something', 'Tell Claude what to change',
+                       'tell Codex what to do differently']
+
+
+def _capture_tmux_pane(session_name: str) -> str:
+    """用 tmux capture-pane 取得渲染後的螢幕內容（適用於 ink/React TUI）"""
+    try:
+        result = subprocess.run(
+            ['tmux', 'capture-pane', '-t', session_name, '-p', '-S', '-50'],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout if result.returncode == 0 else ''
+    except Exception:
+        return ''
 
 
 def _clean_ansi(text: str) -> str:
@@ -530,15 +543,19 @@ def _clean_ansi(text: str) -> str:
     return text
 
 
+_OPTION_EXTRACTORS = {
+    'gemini': lambda text: _extract_options_gemini(text),
+    'codex': lambda text: _extract_options_codex(text),
+}
+
+
 def _extract_options(text: str, cli_type: str = 'claude') -> tuple:
     """從清理後的文字提取標題和選項行，根據 CLI 類型分派邏輯
 
     Returns:
         (title, options) — title 為提問文字，options 為 [(num, label), ...]
     """
-    if cli_type == 'gemini':
-        return _extract_options_gemini(text)
-    return _extract_options_claude(text)
+    return _OPTION_EXTRACTORS.get(cli_type, _extract_options_claude)(text)
 
 
 def _extract_options_claude(text: str) -> tuple:
@@ -648,6 +665,66 @@ def _extract_options_gemini(text: str) -> tuple:
     return title, options
 
 
+def _extract_options_codex(text: str) -> tuple:
+    """Codex CLI 格式：› 標記當前選項，純編號列表
+
+    Codex 使用 ink/React TUI，需透過 tmux capture-pane 取得渲染後文字。
+    格式範例：
+        › 1. Yes, proceed (y)
+          2. Yes, and don't ask again for ... (p)
+          3. No, and tell Codex what to do differently (esc)
+    """
+    lines = text.split('\n')
+
+    # Codex 選項模式：可選的 › 前綴 + 編號
+    codex_option_re = re.compile(r'^\s*[›]?\s*(\d+)\.\s*(.+)')
+
+    # 從尾部往前掃描找到選項區塊
+    options = []
+    first_option_idx = None
+    last_option_idx = None
+
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i].strip()
+        if not line:
+            continue
+        match = codex_option_re.match(line)
+        if match:
+            num, label = match.group(1), match.group(2).strip()
+            if len(num) <= 2:
+                if last_option_idx is None:
+                    last_option_idx = i
+                first_option_idx = i
+                options.insert(0, (num, label))
+        elif last_option_idx is not None:
+            # 遇到非選項行且已找到選項，選項區塊結束
+            break
+
+    if not options:
+        return "", []
+
+    # 標題：選項區塊之前的內容（往前最多 30 行）
+    title_lines = []
+    for i in range(first_option_idx - 1, max(first_option_idx - 30, -1), -1):
+        if i < 0:
+            break
+        line = lines[i].strip()
+        if not line:
+            continue
+        # 遇到分隔線或 › 提示行（非選項的輸入行）停止
+        if line.startswith('─') and len(line) > 10:
+            break
+        if line.startswith('›') and not codex_option_re.match(line):
+            break
+        title_lines.insert(0, line)
+
+    title = '\n'.join(title_lines)
+    if len(title) > 3000:
+        title = title[-3000:]
+
+    return title, options
+
+
 def interaction_polling_worker():
     """輪詢 tmux 輸出，偵測互動選項並推送到 Telegram"""
     while True:
@@ -661,25 +738,34 @@ def interaction_polling_worker():
                 if not config:
                     continue
 
-                log_file = config.log_file
-                if not os.path.exists(log_file):
-                    continue
-
-                # 讀取日誌尾部（最後 5000 字元，足以包含選項區塊）
-                try:
-                    file_size = os.path.getsize(log_file)
-                    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                        f.seek(max(0, file_size - 5000))
-                        new_content = f.read()
-                except Exception:
-                    continue
-
-                if not new_content:
-                    continue
-
-                # 清理 ANSI 並偵測選項（根據 CLI 類型分派）
-                cleaned = _clean_ansi(new_content)
                 cli_type = config.cli_type if config else 'claude'
+
+                # Codex ink/React TUI 用游標定位重繪，日誌無法解析
+                # 改用 tmux capture-pane 取得渲染後畫面
+                if cli_type == 'codex':
+                    bridge = bot_state.session_manager.get_bridge(name)
+                    if not bridge or not bridge.session_exists():
+                        continue
+                    cleaned = _capture_tmux_pane(bridge.session_name)
+                else:
+                    log_file = config.log_file
+                    if not os.path.exists(log_file):
+                        continue
+
+                    # 讀取日誌尾部（最後 5000 字元，足以包含選項區塊）
+                    try:
+                        file_size = os.path.getsize(log_file)
+                        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            f.seek(max(0, file_size - 5000))
+                            new_content = f.read()
+                    except Exception:
+                        continue
+
+                    if not new_content:
+                        continue
+
+                    # 清理 ANSI
+                    cleaned = _clean_ansi(new_content)
                 title, options = _extract_options(cleaned, cli_type)
 
                 if len(options) < 2:

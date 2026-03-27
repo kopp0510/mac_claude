@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from cli_provider import (
-    ClaudeProvider, GeminiProvider, create_provider
+    ClaudeProvider, GeminiProvider, CodexProvider, create_provider
 )
 
 
@@ -260,6 +260,245 @@ class TestGeminiTrustFolder:
             assert trusted.get(abs_path) == "TRUST_FOLDER"
 
 
+class TestCodexProvider:
+    """CodexProvider 測試"""
+
+    def setup_method(self):
+        self.provider = CodexProvider()
+
+    def test_name(self):
+        assert self.provider.name == "codex"
+
+    def test_command(self):
+        assert self.provider.command == "codex"
+
+    def test_default_tmux_prefix(self):
+        assert self.provider.default_tmux_prefix == "codex-"
+
+    def test_extra_enter_false(self):
+        assert self.provider.extra_enter is False
+
+    def test_build_launch_command_no_args(self):
+        assert self.provider.build_launch_command("") == "codex"
+
+    def test_build_launch_command_with_args(self):
+        assert self.provider.build_launch_command("--model o4-mini") == "codex --model o4-mini"
+
+    def test_configure_hooks_creates_settings(self):
+        """驗證 Codex hook 配置寫入 .codex/hooks.json"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir) / 'fake_home'):
+                result = self.provider.configure_hooks(
+                    tmpdir, "test-session", "/path/to/notify_telegram.sh"
+                )
+            assert result is True
+
+            settings_file = os.path.join(tmpdir, '.codex', 'hooks.json')
+            assert os.path.exists(settings_file)
+
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+
+            assert 'hooks' in settings
+            assert 'Stop' in settings['hooks']
+            stop_hooks = settings['hooks']['Stop']
+            assert len(stop_hooks) == 1
+            assert 'hooks' in stop_hooks[0]
+            inner = stop_hooks[0]['hooks'][0]
+            assert inner['type'] == 'command'
+            assert 'TELEGRAM_SESSION_NAME=' in inner['command']
+            assert 'TELEGRAM_CLI_TYPE=codex' in inner['command']
+            assert inner['timeout'] == 30
+
+    def test_configure_hooks_preserves_existing(self):
+        """驗證合併而非覆蓋現有設定"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, '.codex')
+            os.makedirs(config_dir)
+            settings_file = os.path.join(config_dir, 'hooks.json')
+            with open(settings_file, 'w') as f:
+                json.dump({"hooks": {"SessionStart": [{"hooks": []}]}}, f)
+
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir) / 'fake_home'):
+                self.provider.configure_hooks(
+                    tmpdir, "test", "/path/to/script.sh"
+                )
+
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+
+            # 驗證保留原有 hook 事件
+            assert 'SessionStart' in settings['hooks']
+            assert 'Stop' in settings['hooks']
+
+    def test_configure_hooks_no_work_dir(self):
+        assert self.provider.configure_hooks("", "test", "/path/to/script.sh") is False
+
+    def test_remove_hooks(self):
+        """驗證移除 Stop hook 但保留其他設定"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, '.codex')
+            os.makedirs(config_dir)
+            settings_file = os.path.join(config_dir, 'hooks.json')
+            with open(settings_file, 'w') as f:
+                json.dump({
+                    "hooks": {
+                        "Stop": [{"hooks": []}],
+                        "SessionStart": [{"hooks": []}]
+                    }
+                }, f)
+
+            assert self.provider.remove_hooks(tmpdir) is True
+
+            with open(settings_file, 'r') as f:
+                result = json.load(f)
+
+            assert 'Stop' not in result.get('hooks', {})
+            assert 'SessionStart' in result['hooks']
+
+    def test_remove_hooks_no_file(self):
+        """驗證檔案不存在時不報錯"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert self.provider.remove_hooks(tmpdir) is True
+
+
+class TestCodexTrustFolder:
+    """CodexProvider 自動信任目錄測試"""
+
+    def test_configure_hooks_trusts_folder(self):
+        """configure_hooks 後目錄被加入 config.toml"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_home = os.path.join(tmpdir, 'fake_home')
+            os.makedirs(fake_home)
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(fake_home)):
+                work_dir = os.path.join(tmpdir, 'project')
+                os.makedirs(work_dir)
+                provider = CodexProvider()
+                provider.configure_hooks(work_dir, "test", "/path/to/script.sh")
+
+            config_file = os.path.join(fake_home, '.codex', 'config.toml')
+            with open(config_file, 'r') as f:
+                content = f.read()
+
+            abs_path = str(Path(work_dir).resolve())
+            assert f'[projects."{abs_path}"]' in content
+            assert 'trust_level = "trusted"' in content
+
+    def test_trust_idempotent(self):
+        """重複信任同一目錄不重複寫入"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = os.path.join(tmpdir, 'project')
+            os.makedirs(work_dir)
+
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir)):
+                CodexProvider._trust_folder(work_dir)
+                CodexProvider._trust_folder(work_dir)
+
+            config_file = os.path.join(tmpdir, '.codex', 'config.toml')
+            with open(config_file, 'r') as f:
+                content = f.read()
+
+            abs_path = str(Path(work_dir).resolve())
+            assert content.count(f'[projects."{abs_path}"]') == 1
+
+    def test_trust_preserves_existing(self):
+        """信任新目錄不覆蓋已有設定"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, '.codex')
+            os.makedirs(config_dir)
+            config_file = os.path.join(config_dir, 'config.toml')
+            with open(config_file, 'w') as f:
+                f.write('[model]\ndefault = "o4-mini"\n')
+
+            work_dir = os.path.join(tmpdir, 'project')
+            os.makedirs(work_dir)
+
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir)):
+                CodexProvider._trust_folder(work_dir)
+
+            with open(config_file, 'r') as f:
+                content = f.read()
+
+            assert 'default = "o4-mini"' in content
+            assert 'trust_level = "trusted"' in content
+
+
+class TestCodexFeatureFlag:
+    """CodexProvider 功能旗標測試"""
+
+    def test_enable_feature_flag(self):
+        """驗證 ~/.codex/config.toml 寫入 codex_hooks = true"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir)):
+                CodexProvider._enable_hooks_feature_flag()
+
+            config_file = os.path.join(tmpdir, '.codex', 'config.toml')
+            assert os.path.exists(config_file)
+            with open(config_file, 'r') as f:
+                content = f.read()
+            assert '[features]' in content
+            assert 'codex_hooks = true' in content
+
+    def test_feature_flag_preserves_existing(self):
+        """驗證不破壞既有 TOML 內容"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, '.codex')
+            os.makedirs(config_dir)
+            config_file = os.path.join(config_dir, 'config.toml')
+            with open(config_file, 'w') as f:
+                f.write('[model]\ndefault = "o4-mini"\n')
+
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir)):
+                CodexProvider._enable_hooks_feature_flag()
+
+            with open(config_file, 'r') as f:
+                content = f.read()
+            assert 'default = "o4-mini"' in content
+            assert 'codex_hooks = true' in content
+
+    def test_feature_flag_idempotent(self):
+        """驗證重複執行不重複寫入"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, '.codex')
+            os.makedirs(config_dir)
+            config_file = os.path.join(config_dir, 'config.toml')
+            with open(config_file, 'w') as f:
+                f.write('[features]\ncodex_hooks = true\n')
+
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir)):
+                CodexProvider._enable_hooks_feature_flag()
+
+            with open(config_file, 'r') as f:
+                content = f.read()
+            assert content.count('codex_hooks') == 1
+
+    def test_feature_flag_updates_false_to_true(self):
+        """驗證將 codex_hooks = false 更新為 true"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = os.path.join(tmpdir, '.codex')
+            os.makedirs(config_dir)
+            config_file = os.path.join(config_dir, 'config.toml')
+            with open(config_file, 'w') as f:
+                f.write('[features]\ncodex_hooks = false\n')
+
+            with unittest.mock.patch('cli_provider.Path.home',
+                                      return_value=Path(tmpdir)):
+                CodexProvider._enable_hooks_feature_flag()
+
+            with open(config_file, 'r') as f:
+                content = f.read()
+            assert 'codex_hooks = true' in content
+            assert 'codex_hooks = false' not in content
+
+
 class TestCreateProvider:
     """create_provider 工廠函數測試"""
 
@@ -270,6 +509,10 @@ class TestCreateProvider:
     def test_create_gemini(self):
         provider = create_provider("gemini")
         assert isinstance(provider, GeminiProvider)
+
+    def test_create_codex(self):
+        provider = create_provider("codex")
+        assert isinstance(provider, CodexProvider)
 
     def test_unsupported_type(self):
         with pytest.raises(ValueError, match="不支援的 CLI 類型"):

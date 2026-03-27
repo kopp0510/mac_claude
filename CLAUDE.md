@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-透過 tmux 橋接多個 AI CLI 實例（Claude Code、Gemini CLI）的 Telegram Bot。
+透過 tmux 橋接多個 AI CLI 實例（Claude Code、Gemini CLI、OpenAI Codex CLI）的 Telegram Bot。
 **僅負責訊息轉發，不處理 CLI 登入認證。**
 
 ## 開發命令
@@ -19,7 +19,7 @@
 python3 telegram_bot_multi.py
 
 # 測試
-pytest                     # 執行所有測試（~177 個）
+pytest                     # 執行所有測試（~198 個）
 pytest --cov               # 含覆蓋率
 
 # 配置
@@ -39,7 +39,7 @@ tmux attach -t claude-myproject  # 連接會話
 sessions:
   - name: webapp              # 用於路由：#webapp
     path: /path/to/project   # 絕對路徑
-    cli_type: claude          # 可選：claude（預設）或 gemini
+    cli_type: claude          # 可選：claude（預設）、gemini 或 codex
     tmux: claude-webapp      # 可選：預設為 {cli_type}-{name}
     cli_args: "--model sonnet"  # 可選
 
@@ -47,6 +47,11 @@ sessions:
     path: /path/to/infra
     cli_type: gemini
     cli_args: "--yolo"
+
+  - name: codex-app
+    path: /path/to/codex-app
+    cli_type: codex
+    cli_args: "--model o4-mini"
 ```
 
 `cli_args` 向後相容 `claude_args`。文件在 .gitignore 中。
@@ -63,12 +68,12 @@ LANGUAGE=zh-TW               # 可選：zh-TW（預設）或 en
 
 ```
 Telegram → telegram_bot_multi.py → MessageRouter → message_queue → SessionManager → TmuxBridge → CLI
-CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_telegram_notification.py → Telegram
+CLI hook (Claude: Stop, Gemini: AfterAgent, Codex: Stop) → notify_telegram.sh → send_telegram_notification.py → Telegram
 ```
 
 ### 關鍵設計
 
-- **Strategy 模式**：`cli_provider.py` 定義 `CliProvider` 介面，`ClaudeProvider`/`GeminiProvider` 各自處理啟動命令和 hook 配置。新增 CLI 只需新增 Provider
+- **Strategy 模式**：`cli_provider.py` 定義 `CliProvider` 介面，`ClaudeProvider`/`GeminiProvider`/`CodexProvider` 各自處理啟動命令和 hook 配置。新增 CLI 只需新增 Provider
 - **Hook 驅動通知**：hooks 由 `CliProvider.configure_hooks()` 自動配置到專案目錄
 - **單向佇列**：Telegram → CLI 用 `queue.Queue`，CLI → Telegram 完全由 hook 處理
 - **Gemini 特殊處理**：需要 extra Enter 送出、auto-trust folder、hook stdout 必須是 JSON
@@ -93,6 +98,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - Claude hooks 必須寫入 `settings.local.json`（不是 `config.json`）
 - Gemini hooks 超時單位為**毫秒**（30000 = 30 秒）
 - Gemini hook stdout 必須輸出有效 JSON（`{}`）
+- Codex hooks 寫入 `.codex/hooks.json`，需要 `~/.codex/config.toml` 中 `codex_hooks = true`（`CodexProvider` 自動啟用）
 - hooks 自動生成，見 `cli_provider.py` 的 `configure_hooks()`
 
 ### Gemini CLI
@@ -100,6 +106,16 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - 輸入框需要兩次 Enter 才能送出（`extra_enter` 屬性）
 - 若 hook 未觸發，檢查 `.gemini/settings.json` 和 `~/.ai_bridge/logs/hook_debug_*.log`
 - Gemini 互動選項格式為 `╭╰` 框框 + `│` 邊線 + `●` 標記，由 `_extract_options_gemini()` 獨立處理（與 Claude 的 `❯` 格式分開）
+
+### Codex CLI
+- Hook 設定檔位於 `.codex/hooks.json`，使用 `Stop` 事件（與 Claude 相同），超時單位為秒
+- 需要功能旗標 `codex_hooks = true` 在 `~/.codex/config.toml`（`CodexProvider.configure_hooks()` 自動啟用）
+- 目錄必須被信任才能跳過啟動時的信任提示（`CodexProvider` 自動處理 `~/.codex/config.toml` 的 `projects` 設定）
+- `last_assistant_message` 透過 stdin JSON 傳入（與 Claude 相同），`notify_telegram.sh` 無需特殊處理
+- 不需要 extra Enter（與 Claude 相同），但需要 `pre_enter_delay`（0.15 秒）避免 Enter 被 ink/React TUI 當成換行
+- 互動選項使用 `›` 標記（非 Claude 的 `❯`），由 `_extract_options_codex()` 獨立處理
+- 因 ink/React TUI 用游標定位重繪，日誌檔無法直接解析，改用 `tmux capture-pane` 取得渲染後畫面
+- 若 hook 未觸發，檢查 `.codex/hooks.json`、`~/.codex/config.toml` 的 `[features]` 區塊、和 `~/.ai_bridge/logs/hook_debug_*.log`
 
 ### Telegram 發送
 - Markdown 解析失敗時自動 fallback 為純文字重發
@@ -117,7 +133,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 - ALLOWED_USER_IDS 為必填，空白拒絕啟動
 - 每用戶速率限制：5 秒內最多 3 則
 - **翻譯檔**：`locales/zh-TW.json` + `locales/en.json`（Python 用）、`locales/zh-TW.sh` + `locales/en.sh`（Shell 用）。新增字串需同時更新四個語言檔
-- **登入由使用者自行處理**：本專案僅負責 Telegram ↔ CLI 的訊息轉發，不處理 Claude Code 或 Gemini CLI 的登入/認證。使用前須確保 CLI 已完成登入（`claude` / `gemini` 可正常執行）
+- **登入由使用者自行處理**：本專案僅負責 Telegram ↔ CLI 的訊息轉發，不處理 CLI 的登入/認證。使用前須確保 CLI 已完成登入（`claude` / `gemini` / `codex` 可正常執行）
 
 ### i18n 開發注意事項
 - 所有使用者可見字串用 `t('module.key', var=value)` — 不要硬編碼中文或英文
@@ -136,6 +152,8 @@ CLI hook (Claude: Stop, Gemini: AfterAgent) → notify_telegram.sh → send_tele
 # Hook 未觸發
 cat /path/to/project/.claude/settings.local.json  # Claude
 cat /path/to/project/.gemini/settings.json         # Gemini
+cat /path/to/project/.codex/hooks.json             # Codex
+cat ~/.codex/config.toml                           # Codex 功能旗標
 cat ~/.ai_bridge/logs/hook_debug_*.log             # debug log
 
 # 會話問題

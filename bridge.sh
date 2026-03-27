@@ -391,7 +391,7 @@ with open('$SCRIPT_DIR/sessions.yaml') as f:
 for s in (c.get('sessions', []) if c else []):
     name = s.get('name', '')
     cli_type = s.get('cli_type', 'claude')
-    prefix = 'gemini-' if cli_type == 'gemini' else 'claude-'
+    prefix = f'{cli_type}-'
     tmux = s.get('tmux', f'{prefix}{name}')
     print(tmux)
 " 2>/dev/null
@@ -420,9 +420,13 @@ for s in (c.get('sessions', []) if c else []):
     if not path:
         continue
 
-    if cli_type == 'gemini':
-        sf = Path(path) / '.gemini' / 'settings.json'
-        hook_key = 'AfterAgent'
+    hook_map = {
+        'gemini': ('.gemini/settings.json', 'AfterAgent'),
+        'codex': ('.codex/hooks.json', 'Stop'),
+    }
+    if cli_type in hook_map:
+        rel_path, hook_key = hook_map[cli_type]
+        sf = Path(path) / rel_path
     else:
         sf = Path(path) / '.claude' / 'settings.local.json'
         hook_key = 'Stop'
@@ -510,7 +514,7 @@ try:
     for s in (c.get('sessions', []) if c else []):
         name = s.get('name', '')
         cli_type = s.get('cli_type', 'claude')
-        prefix = 'gemini-' if cli_type == 'gemini' else 'claude-'
+        prefix = f'{cli_type}-'
         tmux = s.get('tmux', f'{prefix}{name}')
         print(f'{tmux}:{name}')
 except Exception:
