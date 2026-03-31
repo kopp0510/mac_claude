@@ -10,6 +10,7 @@
 - 🔀 **多會話並行**：同時管理多個 AI CLI 實例（Claude Code、Gemini CLI、Codex CLI），並行執行任務
 - 🏷️ **來源標記**：所有回覆都標記來源 `📍 project`，清楚辨識
 - 📮 **智能路由**：使用 `#project` 語法指定目標，或 `#all` 廣播給所有會話
+- 🔗 **會話串接**：`#A msg >> #B prefix` 讓 A 的回應自動轉發給 B，支援多段串接
 - 🖥️ **同時操作**：可以同時在終端和 Telegram 與 Claude Code 互動
 - 🤖 **Hook 即時通知**：AI CLI 完成回應時透過 Hook 即時推送（Claude: Stop, Gemini: AfterAgent, Codex: Stop），延遲 < 1 秒
 - 🎯 **互動式按鈕**：確認提示自動轉換為 Inline Keyboard 按鈕
@@ -38,6 +39,8 @@
 | `/sessions` | 列出配置的會話與使用方式 |
 | `/restart #session` | 終止並重建指定會話的 tmux 環境 |
 | `/reload` | 熱重載 sessions.yaml 配置（無需重啟 Bot） |
+| `/chain` | 查看活躍的會話串接 |
+| `/chain cancel #session` | 取消指定會話的串接 |
 
 ### bridge.sh 管理命令
 
@@ -58,6 +61,7 @@
 | 多 CLI 支援 | Claude Code + Gemini CLI + Codex CLI，Strategy 模式抽象 |
 | 多會話並行 | 同時管理多個獨立 CLI 實例 |
 | 智能路由 | `#session` 指定目標、`#all` 廣播（無預設會話） |
+| 會話串接 | `#A msg >> #B prefix` 自動轉發，含循環偵測和深度限制 |
 | 互動按鈕 | 確認提示自動轉 Inline Keyboard |
 | 訊息佇列 | 序列化處理，最大 1000 訊息 |
 | 速率限制 | 每用戶 5 秒最多 3 則訊息 |
@@ -177,6 +181,7 @@ sessions:
 #webapp 查詢當前路徑          → 發送給 webapp 會話
 #api 執行測試                → 發送給 api 會話
 #all 生成文檔                → 發送給所有會話
+#webapp 分析程式碼 >> #api 根據分析結果寫測試  → 串接：webapp 完成後自動轉發給 api
 ```
 
 **注意**：必須使用 `#` 前綴指定目標會話，沒有前綴的訊息會返回錯誤並顯示可用會話列表。
@@ -202,6 +207,20 @@ sessions:
 - `/sessions` - 查看會話列表
 - `/restart #session` - 重啟指定會話
 - `/reload` - 重新載入 sessions.yaml 配置（無需重啟 Bot）
+- `/chain` - 查看活躍串接
+- `/chain cancel #session` - 取消指定串接
+
+### 會話串接
+
+將多個 AI 會話串聯起來，前一個的回應自動轉發給下一個：
+
+```
+#webapp 分析這段程式碼的效能瓶頸 >> #api 根據分析結果進行優化
+```
+
+- 支援多段串接：`#A msg >> #B >> #C`（最多 4 次轉發）
+- 含循環偵測（同一會話不可重複出現）
+- 串接過期時間 1 小時
 
 ### 互動式按鈕
 
@@ -435,6 +454,9 @@ A: 使用 `/restart #session` 命令重啟指定會話，例如 `/restart #webap
 
 **Q: 修改配置後需要重啟 Bot 嗎？**
 A: 不需要！使用 `/reload` 命令即可熱重載 `sessions.yaml`，系統會自動添加新會話、移除舊會話，並保持現有會話運行。
+
+**Q: 什麼是會話串接？**
+A: 使用 `>>` 語法將多個會話串聯：`#webapp 分析程式碼 >> #api 寫測試`。webapp 完成分析後，其回應會自動轉發給 api，附帶「寫測試」的前綴指示。用 `/chain` 查看進度，`/chain cancel #session` 取消。
 
 ## 完整移除
 

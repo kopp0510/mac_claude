@@ -19,7 +19,7 @@
 python3 telegram_bot_multi.py
 
 # 測試
-pytest                     # 執行所有測試（~198 個）
+pytest                     # 執行所有測試（~226 個）
 pytest --cov               # 含覆蓋率
 
 # 配置
@@ -68,14 +68,20 @@ LANGUAGE=zh-TW               # 可選：zh-TW（預設）或 en
 
 ```
 Telegram → telegram_bot_multi.py → MessageRouter → message_queue → SessionManager → TmuxBridge → CLI
+                                  ↳ chain 語法 (>> #session) → chain 檔案 → hook 觸發後自動轉發
+
 CLI hook (Claude: Stop, Gemini: AfterAgent, Codex: Stop) → notify_telegram.sh → send_telegram_notification.py → Telegram
+                                                                                ↳ process_chain() → 檢查 chain 檔 → 轉發到下一個會話
+
+interaction_polling_worker → tmux 日誌/capture-pane 輪詢 → 偵測互動選項 → Telegram InlineKeyboard 按鈕
 ```
 
 ### 關鍵設計
 
 - **Strategy 模式**：`cli_provider.py` 定義 `CliProvider` 介面，`ClaudeProvider`/`GeminiProvider`/`CodexProvider` 各自處理啟動命令和 hook 配置。新增 CLI 只需新增 Provider
 - **Hook 驅動通知**：hooks 由 `CliProvider.configure_hooks()` 自動配置到專案目錄
-- **單向佇列**：Telegram → CLI 用 `queue.Queue`，CLI → Telegram 完全由 hook 處理
+- **單向佇列**：Telegram → CLI 用 `queue.Queue`；CLI → Telegram 主要由 hook 處理，Plan mode 互動選項另由 `interaction_polling_worker` 輪詢推送
+- **會話串接 (Chain)**：`#a msg >> #b prefix` 語法，A 完成後 hook 觸發 `process_chain()` 自動轉發回應給 B。含循環偵測、深度限制（最多 4 次轉發）、TTL 過期（1 小時）、原子檔案操作防競態條件
 - **Gemini 特殊處理**：需要 extra Enter 送出、auto-trust folder、hook stdout 必須是 JSON
 - **i18n 多語言**：`i18n.py` 模組 + `locales/` JSON/Shell 翻譯檔，透過 `.env` 的 `LANGUAGE` 切換語言（zh-TW / en）
 
@@ -83,7 +89,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent, Codex: Stop) → notify_telegram.sh 
 
 參考 `telegram_bot_multi.py` 中的現有 handler 模式，新增後需在 `main()` 中用 `add_handler(CommandHandler(...))` 註冊。
 
-現有命令：`/start`、`/status`、`/sessions`、`/restart #session`、`/reload`
+現有命令：`/start`、`/status`、`/sessions`、`/restart #session`、`/reload`、`/chain`（查看/取消串接）
 
 ## Gotchas
 
@@ -117,6 +123,15 @@ CLI hook (Claude: Stop, Gemini: AfterAgent, Codex: Stop) → notify_telegram.sh 
 - 因 ink/React TUI 用游標定位重繪，日誌檔無法直接解析，改用 `tmux capture-pane` 取得渲染後畫面
 - 若 hook 未觸發，檢查 `.codex/hooks.json`、`~/.codex/config.toml` 的 `[features]` 區塊、和 `~/.ai_bridge/logs/hook_debug_*.log`
 
+### 會話串接 (Chain)
+- 語法：`#session1 msg >> #session2 prefix >> #session3`，最多 4 次轉發（`MAX_CHAIN_DEPTH = 5` 段）
+- 檔案位置：`~/.ai_bridge/chains/{session}.json`，原子 `os.replace()` 防競態條件
+- A 回應後 hook 觸發 `process_chain()`，將回應寫入暫存 `.md` 檔再透過 `tmux send-keys` 轉發給 B
+- 含循環偵測（同一 session 不可出現兩次）、TTL 過期（1 小時，`ChainConfig.CHAIN_TTL_SECONDS`）
+- session 忙碌狀態透過 `~/.ai_bridge/status/{session}.busy` 追蹤，超時自動清除（1 小時）
+- `/chain` 查看活躍串接，`/chain cancel #session` 取消
+- `.claimed.{pid}` 孤兒檔案每次 `process_chain()` 呼叫時自動清理（超過 5 分鐘）
+
 ### Telegram 發送
 - Markdown 解析失敗時自動 fallback 為純文字重發
 - 按鈕 callback_data 三種前綴：`select_{session}:{num}`（互動輪詢選項，tmux 按鍵選擇）、`input_{session}:{num}`（文字輸入選項，標記 ✏️）、`choice_{session}:{num}`（一般確認選項，文字發送到佇列）
@@ -125,7 +140,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent, Codex: Stop) → notify_telegram.sh 
 ### 日誌管理
 - 格式：`~/.ai_bridge/logs/{cli_type}_{name}.log`
 - **自動輪替**：超過 10MB 截斷保留 5MB（每 30 分鐘檢查，常數在 `config.py` 的 `TmuxConfig`）
-- **stop 清理**：`bridge.sh stop` 移除所有 hooks（`cleanup_hooks`）、終止 tmux 會話、刪除會話日誌和 hook debug 日誌
+- **stop 清理**：`bridge.sh stop` 移除所有 hooks（`cleanup_hooks`）、終止 tmux 會話、刪除會話日誌、hook debug 日誌、chain 檔案和 status 檔案
 
 ### 其他
 - 會話名稱模式：`[\w\-]+`
@@ -145,6 +160,7 @@ CLI hook (Claude: Stop, Gemini: AfterAgent, Codex: Stop) → notify_telegram.sh 
 - 腳本使用 `set -euo pipefail`，`grep` 找不到結果時會返回非零退出碼導致腳本退出
 - 需要 grep 可能無結果的場景，用 `set +o pipefail` / `set -o pipefail` 包裹
 - Shell 翻譯變數含 `%s` 佔位符，使用時搭配 `printf`：`info "$(printf "$MSG_VAR" "$val")"`
+- inline Python 腳本透過環境變數 `_BRIDGE_SCRIPT_DIR` 取得腳本路徑（避免路徑含特殊字元時的注入風險），每個 inline script 需要 `import os`
 
 ## 故障排除
 

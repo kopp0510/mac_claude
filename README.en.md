@@ -10,6 +10,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 - 🔀 **Multi-Session Parallel**: Manage multiple AI CLI instances (Claude Code, Gemini CLI, Codex CLI) simultaneously, running tasks in parallel
 - 🏷️ **Source Tagging**: All replies are tagged with source `📍 project` for clear identification
 - 📮 **Smart Routing**: Use `#project` syntax to target specific sessions, or `#all` to broadcast to all
+- 🔗 **Session Chaining**: `#A msg >> #B prefix` automatically forwards A's response to B, supports multi-step chains
 - 🖥️ **Concurrent Access**: Interact with Claude Code from both terminal and Telegram at the same time
 - 🤖 **Hook-Based Notifications**: Instant push when AI CLI finishes responding via hooks (Claude: Stop, Gemini: AfterAgent, Codex: Stop), latency < 1 second
 - 🎯 **Interactive Buttons**: Confirmation prompts are automatically converted to Inline Keyboard buttons
@@ -38,6 +39,8 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 | `/sessions` | List configured sessions and usage |
 | `/restart #session` | Terminate and recreate a session's tmux environment |
 | `/reload` | Hot-reload sessions.yaml configuration (no bot restart needed) |
+| `/chain` | View active session chains |
+| `/chain cancel #session` | Cancel a session's chain |
 
 ### bridge.sh Management Commands
 
@@ -58,6 +61,7 @@ Interact bidirectionally with multiple running AI CLI instances (Claude Code, Ge
 | Multi-CLI Support | Claude Code + Gemini CLI + Codex CLI, Strategy pattern abstraction |
 | Multi-Session Parallel | Manage multiple independent CLI instances simultaneously |
 | Smart Routing | `#session` targeting, `#all` broadcast (no default session) |
+| Session Chaining | `#A msg >> #B prefix` auto-forward with cycle detection and depth limit |
 | Interactive Buttons | Confirmation prompts auto-converted to Inline Keyboard |
 | Message Queue | Sequential processing, max 1000 messages |
 | Rate Limiting | Max 3 messages per user per 5 seconds |
@@ -177,6 +181,7 @@ Send messages in Telegram:
 #webapp check current path           → Send to webapp session
 #api run tests                       → Send to api session
 #all generate docs                   → Send to all sessions
+#webapp analyze code >> #api write tests based on analysis  → Chain: auto-forward after webapp completes
 ```
 
 **Note**: You must use the `#` prefix to specify a target session. Messages without a prefix will return an error with a list of available sessions.
@@ -202,6 +207,20 @@ Tests complete! All tests passed.
 - `/sessions` - View session list
 - `/restart #session` - Restart a specific session
 - `/reload` - Reload sessions.yaml configuration (no bot restart needed)
+- `/chain` - View active chains
+- `/chain cancel #session` - Cancel a specific chain
+
+### Session Chaining
+
+Chain multiple AI sessions together — the previous session's response is automatically forwarded to the next:
+
+```
+#webapp analyze performance bottlenecks >> #api optimize based on analysis
+```
+
+- Supports multi-step chains: `#A msg >> #B >> #C` (max 4 forwards)
+- Cycle detection (same session cannot appear twice)
+- Chain TTL: 1 hour
 
 ### Interactive Buttons
 
@@ -437,6 +456,9 @@ A: Use the `/restart #session` command to restart a specific session, e.g., `/re
 
 **Q: Do I need to restart the bot after changing configuration?**
 A: No! Use the `/reload` command to hot-reload `sessions.yaml`. The system automatically adds new sessions, removes old ones, and keeps existing sessions running.
+
+**Q: What is session chaining?**
+A: Use `>>` syntax to chain sessions: `#webapp analyze code >> #api write tests`. After webapp finishes its analysis, its response is automatically forwarded to api with the "write tests" prefix instruction. Use `/chain` to view progress and `/chain cancel #session` to cancel.
 
 ## Complete Removal
 
