@@ -123,7 +123,7 @@ try:
 except Exception as e:
     print(f'Error: {e}', file=sys.stderr)
     sys.exit(1)
-" 2>/dev/null)
+" 2>>"$DEBUG_LOG")
 
 log_debug "Extracted message length: ${#LAST_MESSAGE}"
 
@@ -142,7 +142,13 @@ FORMATTED_MESSAGE="📍 *${TELEGRAM_SESSION_NAME}*
 ${LAST_MESSAGE}"
 
 log_debug "Sending to Telegram..."
-if $PYTHON "$SCRIPT_DIR/send_telegram_notification.py" "$TELEGRAM_SESSION_NAME" "$FORMATTED_MESSAGE"; then
+
+# 將原始回應寫入暫存檔（避免 shell ARG_MAX 限制）
+RAW_RESPONSE_FILE=$(mktemp "${TMPDIR:-/tmp}/ai_bridge_raw_XXXXXX.txt")
+printf '%s' "$LAST_MESSAGE" > "$RAW_RESPONSE_FILE"
+trap 'rm -f "$RAW_RESPONSE_FILE"' EXIT
+
+if $PYTHON "$SCRIPT_DIR/send_telegram_notification.py" "$TELEGRAM_SESSION_NAME" "$FORMATTED_MESSAGE" --raw-file "$RAW_RESPONSE_FILE"; then
     log_debug "Successfully sent to Telegram"
 else
     log_error "Failed to send to Telegram"

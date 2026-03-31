@@ -82,6 +82,8 @@ class MessageRouter:
         lines.append(t('router.usage_header'))
         lines.append(t('router.usage_single', name=example_name))
         lines.append(t('router.usage_all'))
+        if len(sessions) >= 2:
+            lines.append(t('chain.usage', name=sessions[0], target=sessions[1]))
 
         return '\n'.join(lines)
 

@@ -463,8 +463,7 @@ class TestLoadSessionsConfig:
              patch.object(bot_module, 'SessionManager', return_value=mock_manager), \
              patch.object(bot_module, 'MessageRouter'), \
              patch.object(bot_module, 'bot_state') as mock_state:
-            mock_state.update_session_manager = MagicMock()
-            mock_state.update_message_router = MagicMock()
+            mock_state.update_manager_and_router = MagicMock()
             bot_module.load_sessions_config()
 
         mock_manager.add_session.assert_called_once_with(
@@ -486,8 +485,7 @@ class TestLoadSessionsConfig:
              patch.object(bot_module, 'SessionManager', return_value=mock_manager), \
              patch.object(bot_module, 'MessageRouter'), \
              patch.object(bot_module, 'bot_state') as mock_state:
-            mock_state.update_session_manager = MagicMock()
-            mock_state.update_message_router = MagicMock()
+            mock_state.update_manager_and_router = MagicMock()
             bot_module.load_sessions_config()
 
         mock_manager.add_session.assert_called_once_with(
@@ -510,8 +508,7 @@ class TestLoadSessionsConfig:
              patch.object(bot_module, 'SessionManager', return_value=mock_manager), \
              patch.object(bot_module, 'MessageRouter'), \
              patch.object(bot_module, 'bot_state') as mock_state:
-            mock_state.update_session_manager = MagicMock()
-            mock_state.update_message_router = MagicMock()
+            mock_state.update_manager_and_router = MagicMock()
             bot_module.load_sessions_config()
 
         mock_manager.add_session.assert_called_once_with(
@@ -558,8 +555,7 @@ class TestReloadSessionsConfig:
              patch.object(bot_module, 'SessionManager', return_value=mock_new_manager), \
              patch.object(bot_module, 'MessageRouter'), \
              patch.object(bot_module.bot_state, 'session_manager', mock_old_manager), \
-             patch.object(bot_module.bot_state, 'update_session_manager'), \
-             patch.object(bot_module.bot_state, 'update_message_router'):
+             patch.object(bot_module.bot_state, 'update_manager_and_router'):
             success, msg, changes = bot_module.reload_sessions_config()
 
         assert success is True
@@ -648,8 +644,9 @@ class TestInteractionPolling:
         assert "\x1b" not in cleaned
 
     def test_extract_options(self):
-        """測試選項提取"""
+        """測試選項提取（需有 ╌ 分隔線和 ❯ 標記）"""
         text = """Some preamble text
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
 Would you like to proceed?
 ❯ 1. Yes, auto-accept edits
   2. Yes, manually approve edits
@@ -669,10 +666,10 @@ Would you like to proceed?
         assert len(options) == 0
 
     def test_extract_options_single_option_ignored(self):
-        """測試單一選項不被當作互動"""
+        """測試無標記的編號列表不被當作互動"""
         text = "1. Some item"
         title, options = bot_module._extract_options(text)
-        assert len(options) == 1  # 提取到但輪詢邏輯要求 >= 2
+        assert len(options) == 0  # 無 ╌ 分隔線和 ❯ 標記，不是互動選項
 
     def test_extract_options_gemini(self):
         """測試 Gemini CLI 格式選項提取"""
@@ -733,7 +730,7 @@ Would you like to proceed?
         h = hashlib.md5(options_text.encode()).hexdigest()
 
         assert h not in bot_module._poll_sent_hashes
-        bot_module._poll_sent_hashes.add(h)
+        bot_module._poll_sent_hashes[h] = True
         assert h in bot_module._poll_sent_hashes
 
         # 清理

@@ -6,6 +6,7 @@ set -euo pipefail
 
 # === 路徑常數 ===
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export _BRIDGE_SCRIPT_DIR="$SCRIPT_DIR"
 BRIDGE_DIR="${HOME}/.ai_bridge"
 LOG_DIR="${BRIDGE_DIR}/logs"
 PID_FILE="${BRIDGE_DIR}/bridge.pid"
@@ -118,9 +119,9 @@ do_validate() {
         # 檢查是否有配置的會話
         local session_count
         session_count=$($PYTHON -c "
-import yaml, sys
+import yaml, sys, os
 try:
-    with open('$SCRIPT_DIR/sessions.yaml') as f:
+    with open(os.environ['_BRIDGE_SCRIPT_DIR'] + '/sessions.yaml') as f:
         c = yaml.safe_load(f)
     sessions = c.get('sessions', []) if c else []
     print(len(sessions))
@@ -139,10 +140,9 @@ except Exception as e:
         # 檢查每個會話路徑是否存在
         local path_results
         path_results=$($PYTHON -c "
-import yaml
-with open('$SCRIPT_DIR/sessions.yaml') as f:
+import yaml, os
+with open(os.environ['_BRIDGE_SCRIPT_DIR'] + '/sessions.yaml') as f:
     c = yaml.safe_load(f)
-import os
 for s in (c.get('sessions', []) if c else []):
     name = s.get('name', '?')
     path = s.get('path', '')
@@ -176,9 +176,9 @@ for s in (c.get('sessions', []) if c else []):
     # 4. CLI 已安裝（根據 sessions.yaml 中配置的 cli_type 動態檢查）
     local cli_types
     cli_types=$($PYTHON -c "
-import yaml, sys
+import yaml, sys, os
 try:
-    with open('$SCRIPT_DIR/sessions.yaml') as f:
+    with open(os.environ['_BRIDGE_SCRIPT_DIR'] + '/sessions.yaml') as f:
         c = yaml.safe_load(f)
     types = set()
     for s in (c.get('sessions', []) if c else []):
@@ -373,6 +373,12 @@ do_stop() {
     find "$LOG_DIR" -name "*_*.log" -delete 2>/dev/null
     find "$LOG_DIR" -name "hook_debug_*.log" -delete 2>/dev/null
 
+    # 清理 chain 和 status 殘留檔案（避免重啟後意外觸發轉發）
+    rm -f "${HOME}/.ai_bridge/chains/"*.json 2>/dev/null
+    rm -f "${HOME}/.ai_bridge/chains/"*.done 2>/dev/null
+    rm -f "${HOME}/.ai_bridge/chains/"*.claimed.* 2>/dev/null
+    rm -f "${HOME}/.ai_bridge/status/"*.busy 2>/dev/null
+
     info "$MSG_BOT_STOPPED"
 }
 
@@ -385,8 +391,8 @@ get_configured_tmux_sessions() {
 
     if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
         $PYTHON -c "
-import yaml
-with open('$SCRIPT_DIR/sessions.yaml') as f:
+import yaml, os
+with open(os.environ['_BRIDGE_SCRIPT_DIR'] + '/sessions.yaml') as f:
     c = yaml.safe_load(f)
 for s in (c.get('sessions', []) if c else []):
     name = s.get('name', '')
@@ -408,10 +414,10 @@ cleanup_hooks() {
     if [ -f "$SCRIPT_DIR/sessions.yaml" ]; then
         step "$MSG_STEP_CLEANUP_HOOKS"
         $PYTHON -c "
-import yaml, json
+import yaml, json, os
 from pathlib import Path
 
-with open('$SCRIPT_DIR/sessions.yaml') as f:
+with open(os.environ['_BRIDGE_SCRIPT_DIR'] + '/sessions.yaml') as f:
     c = yaml.safe_load(f)
 
 for s in (c.get('sessions', []) if c else []):
@@ -507,9 +513,9 @@ do_status() {
     [ -x "$VENV_DIR/bin/python3" ] && PYTHON="$VENV_DIR/bin/python3"
 
     session_info=$($PYTHON -c "
-import yaml
+import yaml, os
 try:
-    with open('$SCRIPT_DIR/sessions.yaml') as f:
+    with open(os.environ['_BRIDGE_SCRIPT_DIR'] + '/sessions.yaml') as f:
         c = yaml.safe_load(f)
     for s in (c.get('sessions', []) if c else []):
         name = s.get('name', '')

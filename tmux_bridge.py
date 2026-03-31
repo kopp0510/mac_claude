@@ -324,6 +324,77 @@ class TmuxBridge:
         }
 
 
+def send_keys_to_session(tmux_session: str, cli_type: str, message: str) -> bool:
+    """
+    模組級輔助函式：透過 tmux send-keys 發送訊息到指定會話。
+    用於不持有 TmuxBridge 實例的場景（如 hook 串接轉發）。
+
+    Args:
+        tmux_session: tmux 會話名稱
+        cli_type: CLI 類型（'claude', 'gemini', 'codex'）
+        message: 要發送的訊息
+
+    Returns:
+        bool: 是否成功
+    """
+    from cli_provider import ClaudeProvider, GeminiProvider, CodexProvider
+
+    # 透過 cli_type 取得對應 provider 的行為參數
+    _providers = {
+        'claude': ClaudeProvider,
+        'gemini': GeminiProvider,
+        'codex': CodexProvider,
+    }
+    provider_cls = _providers.get(cli_type, ClaudeProvider)
+    provider = provider_cls()
+
+    def _run(args: list) -> bool:
+        try:
+            result = subprocess.run(['tmux'] + args, capture_output=True, text=True)
+            if result.returncode != 0:
+                logger.error(f"tmux {args[0]} failed for {tmux_session}: {result.stderr}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"tmux {args[0]} error for {tmux_session}: {e}")
+            return False
+
+    # 超長訊息使用 load-buffer + paste-buffer 避免 send-keys 截斷
+    if len(message) > 2000:
+        import tempfile
+        fd, tmp_path = tempfile.mkstemp(suffix='.txt')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as tmp:
+                tmp.write(message)
+            if not _run(['load-buffer', tmp_path]):
+                return False
+            if not _run(['paste-buffer', '-t', tmux_session]):
+                return False
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    else:
+        if not _run(['send-keys', '-t', tmux_session, '-l', message]):
+            return False
+
+    # pre-enter delay（Codex ink/React TUI 需要）
+    if provider.pre_enter_delay > 0:
+        time.sleep(provider.pre_enter_delay)
+
+    # 發送 Enter
+    if not _run(['send-keys', '-t', tmux_session, 'Enter']):
+        return False
+
+    # Gemini 需要額外 Enter
+    if provider.extra_enter:
+        if not _run(['send-keys', '-t', tmux_session, 'Enter']):
+            return False
+
+    return True
+
+
 if __name__ == '__main__':
     # 設置日誌
     logging.basicConfig(

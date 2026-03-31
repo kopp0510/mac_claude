@@ -32,7 +32,9 @@
     "running": "Running",
     "stopped": "Stopped",
     "notification": "Notification",
-    "hook_driven": "Hook-driven"
+    "hook_driven": "Hook-driven",
+    "busy": "⏳ Processing ({seconds}s)",
+    "idle": "💤 Idle"
   },
   "session": {
     "not_found": "❌ Session not found: #{name}",
@@ -42,6 +44,7 @@
     "restart_failure": "❌ #{name} restart failed, check logs",
     "sent_single": "✅ Sent to #{name}",
     "sent_multiple": "✅ Sent to {count} sessions",
+    "length_hint": "\n\n(Response limit: Response will be sent via Telegram. Please answer concisely within {max_chars} characters using bullet points, no tables.)",
     "not_initialized": "❌ System not initialized",
     "added": "✅ Added session: {name} @ {path} (CLI: {cli_type})",
     "creating": "📝 Creating session: {name}",
@@ -144,5 +147,25 @@
   },
   "poll": {
     "options_detected": "📋 [#{session}] Interactive options detected:"
+  },
+  "chain": {
+    "invalid_syntax": "❌ Invalid chain syntax: {segment}\nUsage: #session1 message >> #session2 prefix",
+    "invalid_target": "❌ Chain target session not found: #{name}",
+    "cycle_detected": "❌ Chain cycle detected: #{name} appears more than once",
+    "too_deep": "❌ Chain depth exceeds limit (max {max_depth} steps)",
+    "setup_success": "✅ Sent to #{source} | ⏩ Will forward to {chain} when done",
+    "handoff_notification": "🔗 #{source} done, forwarded to #{target}",
+    "completed": "✅ Chain completed: {path} ({steps} steps)",
+    "forward_failed": "❌ Chain forward failed: #{source} → #{target}",
+    "expired": "⏰ Chain for #{source} expired, skipping forward",
+    "cancelled": "✅ Cancelled chain for #{source}",
+    "not_found": "❌ No active chain for #{source}",
+    "no_active": "No active chains",
+    "status_title": "🔗 Active chains:",
+    "status_entry": "• #{source} → #{target} (task: {task})",
+    "usage": "• #{name} message >> #{target} prefix  → Chain sessions",
+    "cmd_chain": "/chain - View/cancel active chains",
+    "read_file_hint": "The previous AI's analysis is in {file_path}. Please read that file first as reference material.",
+    "length_hint": "\n\n(Response limit: Your response will be forwarded to another AI. Please answer briefly and concisely within {max_chars} characters using bullet points, no tables.)"
   }
 }

@@ -43,11 +43,34 @@ class SecurityConfig:
 
 
 @dataclass
+class TelegramConfig:
+    """Telegram 相關配置"""
+    MAX_SEND_LENGTH: int = 4000      # Telegram 發送訊息長度上限
+
+
+@dataclass
+class StatusConfig:
+    """會話狀態追蹤配置"""
+    STATUS_DIR: str = os.path.expanduser("~/.ai_bridge/status")
+
+
+@dataclass
+class ChainConfig:
+    """會話串接配置"""
+    CHAIN_DIR: str = os.path.expanduser("~/.ai_bridge/chains")
+    CHAIN_TTL_SECONDS: int = 3600    # chain 檔過期時間（1小時）
+    MAX_CHAIN_DEPTH: int = 5         # 最大串接段數（含起始節點，即最多 4 次轉發）
+
+
+@dataclass
 class AppConfig:
     """應用程式總配置"""
     tmux: TmuxConfig = field(default_factory=TmuxConfig)
     queue: QueueConfig = field(default_factory=QueueConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    status: StatusConfig = field(default_factory=StatusConfig)
+    chain: ChainConfig = field(default_factory=ChainConfig)
 
     # 環境變數
     @property
@@ -79,7 +102,7 @@ class CompiledPatterns:
     # 多餘空行
     MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
 
-    # Claude Code 確認選項模式（❯ 1. xxx）
+    # Claude Code 確認選項模式（❯ 1. xxx 或 1.xxx）
     CONFIRMATION_OPTION = re.compile(r'^\s*[❯]?\s*(\d+)\.\s*(.+)')
 
     # Gemini CLI 確認選項模式（● 1. xxx，框線已移除後）
@@ -91,8 +114,24 @@ class CompiledPatterns:
     # 訊息路由模式
     MESSAGE_ROUTE = re.compile(r'^#([\w\-]+)\s+(.+)$', re.DOTALL)
 
+    # 串接偵測模式（偵測 >> #session 語法）
+    CHAIN_DETECT = re.compile(r'\s+>>\s+#')
+
+    # 串接分割模式
+    CHAIN_SPLIT = re.compile(r'\s+>>\s+')
+
+    # 串接目標解析模式（#session [可選前綴]）
+    CHAIN_TARGET = re.compile(r'^#([\w\-]+)(?:\s+(.+))?$', re.DOTALL)
+
     # 框線字元
     BOX_CHARS = re.compile(r'^[│╭╮╰╯├─┤┼]+\s*$')
+
+
+    # Session 名稱安全性驗證（檔案操作前必須呼叫）
+    @staticmethod
+    def is_safe_session_name(name: str) -> bool:
+        """驗證 session 名稱不含路徑穿越字元"""
+        return bool(CompiledPatterns.SESSION_NAME.match(name))
 
 
 # 預編譯模式實例

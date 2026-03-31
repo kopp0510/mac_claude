@@ -23,6 +23,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 from collections import defaultdict
+from datetime import datetime
 from session_manager import SessionManager
 from message_router import MessageRouter
 import hashlib
@@ -74,6 +75,12 @@ class BotState:
         with self._lock:
             self.message_router = router
 
+    def update_manager_and_router(self, manager: SessionManager, router: MessageRouter) -> None:
+        """原子更新 session_manager 和 message_router"""
+        with self._lock:
+            self.session_manager = manager
+            self.message_router = router
+
 
 # 全域狀態實例
 bot_state = BotState()
@@ -96,17 +103,19 @@ def check_user_permission(update: Update) -> bool:
 RATE_LIMIT_WINDOW = 5
 RATE_LIMIT_MAX = 3
 _rate_limit_store: dict = defaultdict(list)
+_rate_limit_lock = threading.Lock()
 
 
 def check_rate_limit(user_id: int) -> bool:
     """檢查用戶是否超過速率限制"""
     now = time.time()
-    timestamps = _rate_limit_store[user_id]
-    _rate_limit_store[user_id] = [ts for ts in timestamps if now - ts < RATE_LIMIT_WINDOW]
-    if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
-        return False
-    _rate_limit_store[user_id].append(now)
-    return True
+    with _rate_limit_lock:
+        timestamps = _rate_limit_store[user_id]
+        _rate_limit_store[user_id] = [ts for ts in timestamps if now - ts < RATE_LIMIT_WINDOW]
+        if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
+            return False
+        _rate_limit_store[user_id].append(now)
+        return True
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,6 +138,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {t('start_cmd.cmd_sessions')}
 {t('start_cmd.cmd_restart')}
 {t('start_cmd.cmd_reload')}
+{t('chain.cmd_chain')}
 """
 
     await update.message.reply_text(welcome_message)
@@ -152,6 +162,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if info.get('cli_args'):
             lines.append(f"   {t('status_cmd.args')}: {info['cli_args']}")
         lines.append(f"   {t('status_cmd.state')}: {t('status_cmd.running') if info['exists'] else t('status_cmd.stopped')}")
+        busy_seconds = _get_session_busy_seconds(name)
+        if busy_seconds >= 0:
+            lines.append(f"   {t('status_cmd.busy', seconds=busy_seconds)}")
+        else:
+            lines.append(f"   {t('status_cmd.idle')}")
         lines.append(f"   {t('status_cmd.notification')}: {t('status_cmd.hook_driven')}\n")
 
     await update.message.reply_text('\n'.join(lines))
@@ -179,8 +194,7 @@ async def restart_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session_name = context.args[0].replace('#', '').replace('@', '')
 
-    # 檢查會話是否存在
-    if not bot_state.session_manager.get_session(session_name):
+    if not patterns.is_safe_session_name(session_name) or not bot_state.session_manager.get_session(session_name):
         await update.message.reply_text(t('session.not_found', name=session_name))
         return
 
@@ -244,6 +258,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(t('bot.message_too_long', max_length=app_config.security.MAX_MESSAGE_LENGTH))
         return
 
+    # 偵測串接語法：#session msg >> #session2 prefix
+    if patterns.CHAIN_DETECT.search(user_message):
+        await _handle_chain_message(update, user_message)
+        return
+
     # 路由訊息
     routes = bot_state.message_router.parse_message(user_message)
 
@@ -269,6 +288,152 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(confirm_text)
 
 
+async def _handle_chain_message(update: Update, user_message: str):
+    """處理串接語法：#session1 msg >> #session2 prefix >> ..."""
+    segments = patterns.CHAIN_SPLIT.split(user_message)
+
+    # 第一段必須是 #session message 格式
+    first_routes = bot_state.message_router.parse_message(segments[0].strip())
+    if not first_routes or first_routes[0][0] == '__error__':
+        error_msg = first_routes[0][1] if first_routes else t('chain.invalid_syntax', segment=segments[0].strip())
+        await update.message.reply_text(f"❌ {error_msg}")
+        return
+
+    source_session = first_routes[0][0]
+    source_message = first_routes[0][1]
+
+    # 檢查串接深度限制（segments 包含起始 + 後續，總步數 = len(segments)）
+    max_depth = app_config.chain.MAX_CHAIN_DEPTH
+    if len(segments) > max_depth:
+        await update.message.reply_text(t('chain.too_deep', max_depth=max_depth))
+        return
+
+    # 解析後續串接目標（含循環偵測）
+    chain_steps = []
+    seen_sessions = {source_session}
+    for seg in segments[1:]:
+        seg = seg.strip()
+        match = patterns.CHAIN_TARGET.match(seg)
+        if not match:
+            await update.message.reply_text(t('chain.invalid_syntax', segment=seg))
+            return
+        target_name = match.group(1)
+        # 循環偵測：同一 session 不可出現兩次
+        if target_name in seen_sessions:
+            await update.message.reply_text(t('chain.cycle_detected', name=target_name))
+            return
+        seen_sessions.add(target_name)
+        prefix = (match.group(2) or '').strip()
+        session_config = bot_state.session_manager.get_session(target_name)
+        if not session_config:
+            await update.message.reply_text(t('chain.invalid_target', name=target_name))
+            return
+        chain_steps.append((target_name, prefix, session_config))
+
+    # 寫入 chain 檔
+    all_names = [source_session] + [name for name, _, _ in chain_steps]
+    try:
+        _write_chain_file(source_session, chain_steps, all_names)
+    except (OSError, ValueError) as e:
+        logger.error(f"Failed to write chain file: {e}")
+        await update.message.reply_text(f"❌ {e}")
+        return
+
+    # 串接提示放最前面（A 的回應會寫入檔案給 B 讀取，不需嚴格字元限制）
+    source_message = t('chain.length_hint', max_chars=app_config.telegram.MAX_SEND_LENGTH).strip() + "\n\n" + source_message
+
+    # 將第一段訊息放入佇列
+    try:
+        bot_state.message_queue.put_nowait((source_session, source_message))
+    except queue.Full:
+        await update.message.reply_text(t('bot.queue_full'))
+        return
+
+    # 發送確認
+    chain_desc = " >> ".join([f"#{name}" for name, _, _ in chain_steps])
+    await update.message.reply_text(t('chain.setup_success', source=source_session, chain=chain_desc))
+
+
+def _write_chain_file(source_session: str, chain_steps: list, chain_path: list):
+    """寫入串接配置檔"""
+
+    # 驗證所有 session 名稱安全性（防 path traversal）
+    for name in chain_path:
+        if not patterns.is_safe_session_name(name):
+            raise ValueError(f"Unsafe session name: {name}")
+
+    chain_dir = app_config.chain.CHAIN_DIR
+    os.makedirs(chain_dir, mode=0o700, exist_ok=True)
+
+    # 從後往前建構巢狀結構
+    chain_data = None
+    for target_name, prefix, session_config in reversed(chain_steps):
+        chain_data = {
+            "target_session": target_name,
+            "target_tmux": session_config.tmux_session,
+            "target_cli_type": session_config.cli_type,
+            "target_path": session_config.path,
+            "prompt_prefix": prefix,
+            "next_chain": chain_data,
+            "chain_path": chain_path,
+            "created_at": datetime.now().isoformat(),
+        }
+
+    chain_file = os.path.join(chain_dir, f"{source_session}.json")
+    fd = os.open(chain_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(chain_data, f, ensure_ascii=False, indent=2)
+
+
+async def chain_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """查看或取消活躍的串接"""
+    if not check_user_permission(update):
+        await update.message.reply_text(t('bot.unauthorized'))
+        return
+
+    chain_dir = app_config.chain.CHAIN_DIR
+
+    # /chain cancel #session
+    if context.args and len(context.args) >= 2 and context.args[0] == 'cancel':
+        session_name = context.args[1].replace('#', '')
+        if not patterns.is_safe_session_name(session_name):
+            await update.message.reply_text(t('session.not_found', name=session_name))
+            return
+        chain_file = os.path.join(chain_dir, f"{session_name}.json")
+        if os.path.exists(chain_file):
+            os.remove(chain_file)
+            await update.message.reply_text(t('chain.cancelled', source=session_name))
+        else:
+            await update.message.reply_text(t('chain.not_found', source=session_name))
+        return
+
+    # /chain — 列出活躍的串接
+    if not os.path.exists(chain_dir):
+        await update.message.reply_text(t('chain.no_active'))
+        return
+
+    lines = []
+    for f_name in os.listdir(chain_dir):
+        if not f_name.endswith('.json'):
+            continue
+        source = f_name[:-5]  # 移除 .json
+        try:
+            with open(os.path.join(chain_dir, f_name), 'r', encoding='utf-8') as f:
+                chain = json.load(f)
+            target = chain.get('target_session', '?')
+            task = chain.get('prompt_prefix', '') or '-'
+            lines.append(t('chain.status_entry', source=source, target=target, task=task))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    if lines:
+        text = t('chain.status_title') + "\n" + "\n".join(lines)
+    else:
+        text = t('chain.no_active')
+
+    await update.message.reply_text(text)
+
+
 def _parse_callback_data(data: str, prefix: str) -> tuple:
     """解析 callback_data，移除前綴後拆分為 (session_name, value)
 
@@ -290,17 +455,25 @@ def _send_tmux_selection(session_name: str, choice_num: str) -> None:
 
     try:
         num = int(choice_num)
-        tmux_session = bot_state.session_manager.get_session(session_name).tmux_session
+        session_config = bot_state.session_manager.get_session(session_name)
+        if not session_config:
+            return
+        tmux_session = session_config.tmux_session
         for _ in range(num - 1):
-            subprocess.run(
+            result = subprocess.run(
                 ['tmux', 'send-keys', '-t', tmux_session, 'Down'],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=5
             )
+            if result.returncode != 0:
+                logger.warning(f"tmux send-keys Down failed: {result.stderr}")
+                return
             time.sleep(0.1)
-        subprocess.run(
+        result = subprocess.run(
             ['tmux', 'send-keys', '-t', tmux_session, 'Enter'],
-            capture_output=True, text=True
+            capture_output=True, text=True, timeout=5
         )
+        if result.returncode != 0:
+            logger.warning(f"tmux send-keys Enter failed: {result.stderr}")
     except Exception as e:
         logger.warning(f"Failed to send selection keys: {e}")
 
@@ -372,6 +545,41 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _mark_session_busy(session_name: str) -> None:
+    """標記 session 為忙碌狀態"""
+    if not patterns.is_safe_session_name(session_name):
+        return
+    status_dir = app_config.status.STATUS_DIR
+    os.makedirs(status_dir, mode=0o700, exist_ok=True)
+    busy_file = os.path.join(status_dir, f"{session_name}.busy")
+    try:
+        fd = os.open(busy_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(datetime.now().isoformat())
+    except OSError as e:
+        logger.warning(f"Failed to mark session busy: {e}")
+
+
+BUSY_TIMEOUT_SECONDS = 3600  # busy 狀態超過 1 小時自動清除
+
+def _get_session_busy_seconds(session_name: str) -> int:
+    """取得 session 忙碌秒數，未忙碌返回 -1。超過 BUSY_TIMEOUT_SECONDS 自動清除。"""
+    busy_file = os.path.join(app_config.status.STATUS_DIR, f"{session_name}.busy")
+    try:
+        with open(busy_file, 'r', encoding='utf-8') as f:
+            start_time = datetime.fromisoformat(f.read().strip())
+        seconds = int((datetime.now() - start_time).total_seconds())
+        if seconds > BUSY_TIMEOUT_SECONDS:
+            try:
+                os.remove(busy_file)
+            except OSError:
+                pass
+            return -1
+        return seconds
+    except (FileNotFoundError, ValueError, OSError):
+        return -1
+
+
 def message_queue_processor():
     """處理訊息佇列（Telegram → Claude）"""
     while True:
@@ -383,6 +591,7 @@ def message_queue_processor():
 
             # 發送到對應會話
             bot_state.session_manager.send_to_session(session_name, message)
+            _mark_session_busy(session_name)
 
             time.sleep(app_config.tmux.COMMAND_DELAY)
 
@@ -422,9 +631,8 @@ def load_sessions_config():
         logger.error(t('bridge.config_load_failed', error=e))
         sys.exit(1)
 
-    # 更新全域狀態
-    bot_state.update_session_manager(session_manager)
-    bot_state.update_message_router(MessageRouter(session_manager))
+    # 原子更新全域狀態
+    bot_state.update_manager_and_router(session_manager, MessageRouter(session_manager))
 
 
 def reload_sessions_config():
@@ -478,9 +686,8 @@ def reload_sessions_config():
                                           session_alias=name,
                                           cli_args=cli_args)
 
-        # 更新全域狀態
-        bot_state.update_session_manager(new_manager)
-        bot_state.update_message_router(MessageRouter(new_manager))
+        # 原子更新全域狀態
+        bot_state.update_manager_and_router(new_manager, MessageRouter(new_manager))
 
         message = t('reload.success', added=len(added), removed=len(removed), kept=len(kept))
         return True, message, changes
@@ -506,14 +713,16 @@ def log_rotation_worker():
                         data = log_file.read_bytes()[-app_config.tmux.LOG_KEEP_SIZE:]
                         log_file.write_bytes(data)
                         logger.info(t('bridge.log_truncated', name=log_file.name))
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as e:
+                    logger.debug(f"Log rotation error for {log_file}: {e}")
+        except Exception as e:
+            logger.debug(f"Log rotation scan error: {e}")
 
 
 # 互動偵測輪詢狀態
-_poll_sent_hashes: set = set()  # 已推送選項的 hash，防重複
+_poll_lock = threading.Lock()
+_poll_sent_hashes: dict = {}    # {hash: True}，保持插入順序做 LRU 淘汰
+_POLL_HASH_MAX_SIZE = 1000      # hash 集合上限，防記憶體洩漏
 _poll_last_sent: dict = {}  # {session_name: timestamp}，防短時間重複
 POLL_COOLDOWN = 30  # 同一 session 發送冷卻時間（秒）
 
@@ -558,20 +767,41 @@ def _extract_options(text: str, cli_type: str = 'claude') -> tuple:
     return _OPTION_EXTRACTORS.get(cli_type, _extract_options_claude)(text)
 
 
+def _is_border_line(line: str) -> bool:
+    """判斷是否為分隔線（╌ 或 ─ 連續 10 個以上）"""
+    stripped = line.strip()
+    return ('╌' in stripped or
+            (stripped.startswith('─') and len(stripped) > 10))
+
+
 def _extract_options_claude(text: str) -> tuple:
-    """Claude Code 格式：╌ 分隔 plan 內容，❯ 標記選項"""
+    """Claude Code 格式：分隔線後 + ❯ 標記選項"""
     lines = text.split('\n')
 
-    # 找最後一條 ╌ 分隔線，只在其後搜尋選項
+    # 找最後一條分隔線（╌ 或 ─），只在其後搜尋選項
     last_border_idx = -1
     for i in range(len(lines) - 1, -1, -1):
-        if '╌' in lines[i]:
+        if _is_border_line(lines[i]):
             last_border_idx = i
             break
 
-    search_start = last_border_idx + 1 if last_border_idx >= 0 else 0
+    # 沒有分隔線 → 退回用 ❯ 標記直接搜尋（從尾部往前找 ❯ 行）
+    if last_border_idx < 0:
+        # 從尾部找 ❯ 所在行，往前擴展選項區塊
+        marker_idx = -1
+        for i in range(len(lines) - 1, -1, -1):
+            if '❯' in lines[i]:
+                marker_idx = i
+                break
+        if marker_idx < 0:
+            return "", []
+        search_start = max(0, marker_idx - 10)
+    else:
+        search_start = last_border_idx + 1
+
     options = []
     first_option_idx = None
+    has_marker = False
 
     for i in range(search_start, len(lines)):
         line_stripped = lines[i].strip()
@@ -583,9 +813,15 @@ def _extract_options_claude(text: str) -> tuple:
             if len(num) <= 2:
                 if first_option_idx is None:
                     first_option_idx = i
+                if '❯' in lines[i]:
+                    has_marker = True
                 options.append((num, label))
 
-    # 標題：╌ 框框內的 plan 內容 + 提問文字
+    # 沒有 ❯ 標記的編號列表不是互動選項
+    if not has_marker:
+        return "", []
+
+    # 標題：分隔線後、選項前的文字
     title = ""
     if first_option_idx is not None:
         title_lines = []
@@ -596,12 +832,7 @@ def _extract_options_claude(text: str) -> tuple:
             line = lines[i].strip()
             if not line:
                 continue
-            if '╌' in line:
-                border_count += 1
-                if border_count >= 2:
-                    break
-                continue
-            if line.startswith('─') and len(line) > 10:
+            if _is_border_line(lines[i]):
                 break
             title_lines.insert(0, line)
         title = '\n'.join(title_lines)
@@ -683,6 +914,7 @@ def _extract_options_codex(text: str) -> tuple:
     options = []
     first_option_idx = None
     last_option_idx = None
+    has_marker = False  # 至少一個選項要有 › 標記
 
     for i in range(len(lines) - 1, -1, -1):
         line = lines[i].strip()
@@ -695,12 +927,15 @@ def _extract_options_codex(text: str) -> tuple:
                 if last_option_idx is None:
                     last_option_idx = i
                 first_option_idx = i
+                if '›' in lines[i]:
+                    has_marker = True
                 options.insert(0, (num, label))
         elif last_option_idx is not None:
             # 遇到非選項行且已找到選項，選項區塊結束
             break
 
-    if not options:
+    # 沒有 › 標記的編號列表不是互動選項
+    if not options or not has_marker:
         return "", []
 
     # 標題：選項區塊之前的內容（往前最多 30 行）
@@ -771,18 +1006,24 @@ def interaction_polling_worker():
                 if len(options) < 2:
                     continue
 
-                # 防重複：冷卻時間 + hash
+                # 防重複：冷卻時間 + hash（加鎖保護）
                 now = time.time()
-                last_sent = _poll_last_sent.get(name, 0)
-                if now - last_sent < POLL_COOLDOWN:
-                    continue
+                with _poll_lock:
+                    last_sent = _poll_last_sent.get(name, 0)
+                    if now - last_sent < POLL_COOLDOWN:
+                        continue
 
-                options_text = '|'.join(f"{n}.{l}" for n, l in options)
-                options_hash = hashlib.md5(options_text.encode()).hexdigest()
-                if options_hash in _poll_sent_hashes:
-                    continue
-                _poll_sent_hashes.add(options_hash)
-                _poll_last_sent[name] = now
+                    options_text = '|'.join(f"{n}.{l}" for n, l in options)
+                    options_hash = hashlib.md5(options_text.encode()).hexdigest()
+                    if options_hash in _poll_sent_hashes:
+                        continue
+                    # 限界：超過上限時刪除最舊的一半（dict 保持插入順序）
+                    if len(_poll_sent_hashes) >= _POLL_HASH_MAX_SIZE:
+                        keys = list(_poll_sent_hashes.keys())
+                        for k in keys[:len(keys) // 2]:
+                            del _poll_sent_hashes[k]
+                    _poll_sent_hashes[options_hash] = True
+                    _poll_last_sent[name] = now
 
                 # 組合標題（Telegram API 限制 4096 字元）
                 header_parts = [f"📋 [#{name}]"]
@@ -872,6 +1113,7 @@ def main():
     bot_state.telegram_app.add_handler(CommandHandler("sessions", sessions_list))
     bot_state.telegram_app.add_handler(CommandHandler("restart", restart_session))
     bot_state.telegram_app.add_handler(CommandHandler("reload", reload_config))
+    bot_state.telegram_app.add_handler(CommandHandler("chain", chain_command))
 
     # 註冊按鈕回調處理器
     bot_state.telegram_app.add_handler(CallbackQueryHandler(button_callback))

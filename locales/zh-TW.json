@@ -32,7 +32,9 @@
     "running": "運行中",
     "stopped": "未啟動",
     "notification": "通知",
-    "hook_driven": "Hook 驅動"
+    "hook_driven": "Hook 驅動",
+    "busy": "⏳ 處理中（已 {seconds}s）",
+    "idle": "💤 閒置"
   },
   "session": {
     "not_found": "❌ 會話不存在: #{name}",
@@ -42,6 +44,7 @@
     "restart_failure": "❌ #{name} 重啟失敗，請查看日誌",
     "sent_single": "✅ 已發送給 #{name}",
     "sent_multiple": "✅ 已發送給 {count} 個會話",
+    "length_hint": "\n\n（回應限制：回應會透過 Telegram 傳送，請在 {max_chars} 字元以內簡短精簡回答，用條列式，不要用表格）",
     "not_initialized": "❌ 系統未初始化",
     "added": "✅ 添加會話: {name} @ {path} (CLI: {cli_type})",
     "creating": "📝 創建會話: {name}",
@@ -144,5 +147,25 @@
   },
   "poll": {
     "options_detected": "📋 [#{session}] 偵測到互動選項："
+  },
+  "chain": {
+    "invalid_syntax": "❌ 串接語法錯誤：{segment}\n用法：#session1 訊息 >> #session2 前綴",
+    "invalid_target": "❌ 串接目標會話不存在：#{name}",
+    "cycle_detected": "❌ 串接偵測到循環：#{name} 重複出現",
+    "too_deep": "❌ 串接深度超過上限（最多 {max_depth} 步）",
+    "setup_success": "✅ 已發送給 #{source}｜⏩ 完成後將轉發給 {chain}",
+    "handoff_notification": "🔗 #{source} 完成，已轉發給 #{target}",
+    "completed": "✅ 串接完成：{path}（共 {steps} 步）",
+    "forward_failed": "❌ 串接轉發失敗：#{source} → #{target}",
+    "expired": "⏰ #{source} 的串接已過期，跳過轉發",
+    "cancelled": "✅ 已取消 #{source} 的串接",
+    "not_found": "❌ #{source} 沒有活躍的串接",
+    "no_active": "沒有活躍的串接",
+    "status_title": "🔗 活躍的串接：",
+    "status_entry": "• #{source} → #{target}（任務：{task}）",
+    "usage": "• #{name} 訊息 >> #{target} 前綴  → 串接會話",
+    "cmd_chain": "/chain - 查看/取消活躍串接",
+    "read_file_hint": "上一個 AI 的分析結果在 {file_path}，請先讀取該檔案內容作為參考資料",
+    "length_hint": "\n\n（回應限制：你的回應會轉交給下一個 AI 處理，請在 {max_chars} 字元以內簡短精簡回答，用條列式，不要用表格）"
   }
 }

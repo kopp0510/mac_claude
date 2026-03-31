@@ -4,14 +4,18 @@ Helper script to send Telegram notifications from Claude Code hooks.
 Called by notify_telegram.sh when Claude finishes responding.
 """
 
+import json
 import os
 import sys
 import time
 import logging
 import requests
+from datetime import datetime
 from requests.exceptions import RequestException, Timeout, ConnectionError as ReqConnectionError
 from dotenv import load_dotenv
+from config import config as app_config, patterns
 from i18n import t
+from tmux_bridge import send_keys_to_session
 
 # 設置日誌
 logging.basicConfig(
@@ -21,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 配置常數
-MAX_MESSAGE_LENGTH = 4000
+MAX_MESSAGE_LENGTH = app_config.telegram.MAX_SEND_LENGTH
 API_TIMEOUT = 10
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
@@ -170,13 +174,250 @@ def send_to_chat(bot_token: str, chat_id: str, message: str) -> bool:
     return False
 
 
+def process_chain(session_name: str, raw_response: str) -> bool:
+    """檢查 chain 檔並轉發回應到下一個會話"""
+    # 驗證 session 名稱安全性（防 path traversal）
+    if not patterns.is_safe_session_name(session_name):
+        logger.error(f"Unsafe session name rejected: {session_name}")
+        return False
+
+    chain_dir = app_config.chain.CHAIN_DIR
+
+    # 清理孤兒 .claimed.* 檔案（進程 crash 後遺留，超過 5 分鐘視為過期）
+    CLAIMED_TTL = 300  # 5 分鐘
+    try:
+        if os.path.isdir(chain_dir):
+            now = time.time()
+            for fname in os.listdir(chain_dir):
+                if '.claimed.' not in fname:
+                    continue
+                fpath = os.path.join(chain_dir, fname)
+                try:
+                    if now - os.path.getmtime(fpath) > CLAIMED_TTL:
+                        os.remove(fpath)
+                        logger.info(f"Cleaned orphaned claimed file: {fname}")
+                except OSError:
+                    pass
+    except OSError as e:
+        logger.debug(f"Error cleaning claimed files: {e}")
+
+    # 檢查是否為串接最終節點完成（.done 標記檔）
+    done_file = os.path.join(chain_dir, f"{session_name}.done")
+    try:
+        if os.path.exists(done_file):
+            with open(done_file, 'r', encoding='utf-8') as f:
+                done_info = json.load(f)
+            os.remove(done_file)
+            chain_path_list = done_info.get("chain_path", [])
+            chain_path = " >> ".join([f"#{s}" for s in chain_path_list])
+            step_count = done_info.get("step_count", 0)
+            completed_msg = t('chain.completed', path=chain_path, steps=step_count)
+            send_telegram_message(session_name, completed_msg)
+            # 清理暫存 .md 檔案
+            for result_file in done_info.get("result_files", []):
+                try:
+                    os.remove(result_file)
+                    logger.info(f"Cleaned chain result file: {result_file}")
+                except FileNotFoundError:
+                    pass
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Error processing done file: {e}")
+
+    # 檢查 chain 檔（用原子 rename 防競態條件）
+    chain_file = os.path.join(chain_dir, f"{session_name}.json")
+    claimed_file = chain_file + f".claimed.{os.getpid()}"
+    try:
+        os.replace(chain_file, claimed_file)
+    except FileNotFoundError:
+        # 不存在或已被另一個 hook 消費
+        return False
+    except OSError as e:
+        logger.error(f"Error claiming chain file: {e}")
+        return False
+
+    try:
+        with open(claimed_file, 'r', encoding='utf-8') as f:
+            chain = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.error(f"Error reading chain file: {e}")
+        return False
+    finally:
+        try:
+            os.remove(claimed_file)
+        except OSError:
+            pass
+
+    # 檢查 TTL
+    created_at = chain.get('created_at', '')
+    try:
+        created_time = datetime.fromisoformat(created_at)
+        if (datetime.now() - created_time).total_seconds() > app_config.chain.CHAIN_TTL_SECONDS:
+            expired_msg = t('chain.expired', source=session_name)
+            send_telegram_message(session_name, expired_msg)
+            logger.warning(f"Chain for {session_name} expired")
+            return False
+    except (ValueError, TypeError):
+        logger.warning(f"Chain for {session_name} has invalid created_at: {created_at!r}, rejecting")
+        return False
+
+    # 驗證必要欄位
+    required_fields = ['target_session', 'target_tmux', 'target_path', 'created_at']
+    missing = [f for f in required_fields if not chain.get(f)]
+    if missing:
+        logger.error(f"Chain file missing required fields: {missing}")
+        return False
+
+    target_session = chain['target_session']
+    target_tmux = chain['target_tmux']
+    target_cli_type = chain.get('target_cli_type', 'claude')
+    target_path = chain['target_path']
+    prompt_prefix = chain.get('prompt_prefix', '')
+    next_chain = chain.get('next_chain')
+    chain_path = chain.get('chain_path', [])
+
+    # 1. 發送交接通知到 Telegram
+    handoff_msg = t('chain.handoff_notification',
+                    source=session_name, target=target_session)
+    send_telegram_message(session_name, handoff_msg)
+
+    # 2. 將 A 的回應寫入暫存 .md 檔案（放在 B 的工作目錄內，確保可讀取）
+    chain_result_file = os.path.join(target_path, f".ai_bridge_chain_{session_name}.md")
+    try:
+        fd = os.open(chain_result_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(raw_response)
+    except OSError as e:
+        logger.error(f"Error writing chain result file: {e}")
+        fail_msg = t('chain.forward_failed', source=session_name, target=target_session)
+        send_telegram_message(session_name, fail_msg)
+        return False
+
+    # 3. 組合轉發訊息：任務指令 + 讀取檔案提示
+    parts = []
+
+    # B 的回應最終會回到 TG，統一用 TG 字元限制
+    parts.append(t('session.length_hint',
+                   max_chars=app_config.telegram.MAX_SEND_LENGTH).strip())
+
+    if prompt_prefix:
+        parts.append(prompt_prefix)
+
+    parts.append(t('chain.read_file_hint', file_path=chain_result_file))
+
+    forwarded_message = "\n\n".join(parts)
+
+    # 4. 若有 next_chain，寫入目標 session 的 chain 檔（含累積 result_files）
+    if next_chain:
+        # 累積追蹤所有中間暫存檔，供最終 .done 清理
+        prev_files = next_chain.get('_result_files', [])
+        next_chain['_result_files'] = prev_files + [chain_result_file]
+        try:
+            os.makedirs(chain_dir, mode=0o700, exist_ok=True)
+            next_file = os.path.join(chain_dir, f"{target_session}.json")
+            fd = os.open(next_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(next_chain, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            logger.error(f"Error writing next chain file: {e}")
+    else:
+        # 最終節點：寫入 .done 標記檔（含所有暫存檔路徑）
+        if len(chain_path) >= 2:
+            all_result_files = chain.get('_result_files', []) + [chain_result_file]
+            try:
+                os.makedirs(chain_dir, mode=0o700, exist_ok=True)
+                done_data = {
+                    "chain_path": chain_path,
+                    "step_count": len(chain_path),
+                    "result_files": all_result_files
+                }
+                done_path = os.path.join(chain_dir, f"{target_session}.done")
+                fd = os.open(done_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(done_data, f, ensure_ascii=False)
+            except OSError as e:
+                logger.error(f"Error writing done file: {e}")
+
+    # 5. 轉發到目標 tmux
+    if not send_keys_to_session(target_tmux, target_cli_type, forwarded_message):
+        fail_msg = t('chain.forward_failed', source=session_name, target=target_session)
+        send_telegram_message(session_name, fail_msg)
+        return False
+
+    # 標記目標 session 為 busy
+    _mark_session_busy(target_session)
+
+    logger.info(f"Chain forwarded: {session_name} -> {target_session}")
+    return True
+
+
+def _mark_session_busy(session_name: str):
+    """標記 session 為忙碌狀態"""
+    if not patterns.is_safe_session_name(session_name):
+        return
+    status_dir = app_config.status.STATUS_DIR
+    os.makedirs(status_dir, mode=0o700, exist_ok=True)
+    busy_file = os.path.join(status_dir, f"{session_name}.busy")
+    try:
+        fd = os.open(busy_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(datetime.now().isoformat())
+    except OSError as e:
+        logger.warning(f"Failed to mark session busy: {e}")
+
+
+def _clear_session_busy(session_name: str):
+    """清除 session 的忙碌標記"""
+    if not patterns.is_safe_session_name(session_name):
+        return
+    busy_file = os.path.join(app_config.status.STATUS_DIR,
+                             f"{session_name}.busy")
+    try:
+        os.remove(busy_file)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.warning(f"Failed to clear busy file: {e}")
+
+
+def _has_pending_chain(session_name: str) -> bool:
+    """檢查 session 是否有待處理的串接"""
+    chain_file = os.path.join(app_config.chain.CHAIN_DIR,
+                              f"{session_name}.json")
+    return os.path.exists(chain_file)
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print("Usage: send_telegram_notification.py <session_name> <message>", file=sys.stderr)
+    if len(sys.argv) < 3:
+        print("Usage: send_telegram_notification.py <session_name> <message> [--raw-file <path>]",
+              file=sys.stderr)
         sys.exit(1)
 
     session_name = sys.argv[1]
     message = sys.argv[2]
 
-    success = send_telegram_message(session_name, message)
+    # 從暫存檔讀取原始回應（避免 shell ARG_MAX 限制）
+    raw_response = ""
+    if len(sys.argv) >= 5 and sys.argv[3] == '--raw-file':
+        raw_file_path = sys.argv[4]
+        try:
+            with open(raw_file_path, 'r', encoding='utf-8') as f:
+                raw_response = f.read()
+        except OSError as e:
+            logger.error(f"Failed to read raw response file: {e}")
+
+    success = True
+
+    # 有串接時：不發 A 的完整回應到 TG，只走串接流程（含交接通知）
+    # 無串接時：正常發送到 TG
+    if raw_response and _has_pending_chain(session_name):
+        success = process_chain(session_name, raw_response)
+    else:
+        success = send_telegram_message(session_name, message)
+        # 處理 .done 完成通知（最終節點）
+        if raw_response:
+            process_chain(session_name, raw_response)
+
+    # 清除忙碌標記（session 已完成工作）
+    _clear_session_busy(session_name)
+
     sys.exit(0 if success else 1)
